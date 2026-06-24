@@ -1,0 +1,701 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#1c1f24">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <meta name="referrer" content="no-referrer">
+  <title>📷 Compagnon : Mobile</title>
+
+  <link rel="stylesheet" href="/static/vendor/cropperjs/cropper.min.css">
+  <script defer src="/static/vendor/cropperjs/cropper.min.js"></script>
+  <style>
+    :root {
+      --bg: #1c1f24; --bg-elev: #262a31; --fg: #e6e6e6; --fg-dim: #9aa0a6;
+      --accent: #7eb6ff; --warn: #ffb454; --err: #ff6e6e; --ok: #b6e3a8;
+    }
+    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; padding: 0; min-height: 100vh; }
+    body {
+      background: var(--bg); color: var(--fg);
+      font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+      font-size: 16px; line-height: 1.4;
+      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    }
+    header {
+      padding: 14px 16px; background: var(--bg-elev);
+      border-bottom: 1px solid #333;
+      position: sticky; top: 0; z-index: 10;
+    }
+    header h1 { margin: 0; font-size: 18px; }
+    .session-info {
+      font-size: 13px; color: var(--fg-dim);
+      margin-top: 4px; font-family: ui-monospace, monospace;
+    }
+    .session-info.inactive { color: var(--err); }
+    .session-info.inactive::before { content: "⚠ "; }
+    main { padding: 16px; }
+    .capture-zone {
+      display: flex; flex-direction: column; gap: 12px;
+      align-items: center; justify-content: center;
+      background: rgba(126, 182, 255, 0.06);
+      border: 2px dashed rgba(126, 182, 255, 0.4);
+      border-radius: 12px;
+      padding: 32px 16px;
+      text-align: center;
+    }
+    .capture-btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 10px;
+      background: var(--accent); color: #111;
+      border: 0; border-radius: 8px;
+      padding: 16px 24px;
+      font-size: 17px; font-weight: 600;
+      cursor: pointer; min-width: 220px; min-height: 56px;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+      -webkit-appearance: none;
+    }
+    .capture-btn:active { transform: translateY(1px); }
+    .capture-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .capture-hint { font-size: 13px; color: var(--fg-dim); }
+    .file-input { display: none; }
+    .uploads-section { margin-top: 24px; }
+    .uploads-section h2 {
+      margin: 0 0 8px; font-size: 13px; text-transform: uppercase;
+      color: var(--fg-dim); letter-spacing: 0.5px;
+    }
+    .uploads-list { display: flex; flex-direction: column; gap: 6px; }
+    .uploads-empty { color: var(--fg-dim); font-style: italic; font-size: 14px; }
+    .upload-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 12px; border-radius: 6px;
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+    }
+    .upload-item.uploading { opacity: 0.6; }
+    .upload-item.error { border-color: var(--err); background: rgba(255, 110, 110, 0.08); }
+    .upload-thumb {
+      width: 48px; height: 48px; flex: 0 0 auto;
+      border-radius: 4px; object-fit: cover;
+      background: rgba(255, 255, 255, 0.05);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 22px;
+    }
+    .upload-info { flex: 1 1 auto; min-width: 0; }
+    .upload-name {
+      font-size: 14px; font-weight: 500;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .upload-meta { font-size: 12px; color: var(--fg-dim); }
+    .upload-status {
+      flex: 0 0 auto; font-size: 18px;
+      padding: 0 6px;
+    }
+    .upload-status.ok { color: var(--ok); }
+    .upload-status.err { color: var(--err); }
+    .upload-status.pending { color: var(--warn); }
+    .upload-del {
+      background: transparent; border: 0; color: var(--fg-dim);
+      cursor: pointer; font-size: 18px; padding: 4px 8px;
+    }
+    .upload-del:active { color: var(--err); }
+    .footer-hint {
+      margin-top: 24px;
+      padding: 12px 14px;
+      background: rgba(255, 255, 255, 0.03);
+      border-radius: 6px;
+      font-size: 13px; color: var(--fg-dim); line-height: 1.5;
+    }
+    .footer-hint code {
+      background: rgba(0,0,0,0.3); padding: 1px 5px; border-radius: 2px;
+      font-family: ui-monospace, monospace; font-size: 12px;
+    }
+    /* Phase v15.7.10 : bouton ✂ Rogner inline (avant 🗑). */
+    .upload-crop {
+      background: transparent; border: 0; color: var(--accent);
+      cursor: pointer; font-size: 18px; padding: 4px 8px;
+    }
+    .upload-crop:active { color: var(--fg); }
+    /* Modal de rognage : plein écran sur mobile pour donner toute la
+       surface tactile à Cropper.js. */
+    #crop-modal,
+    #crop-preview-modal-m {
+      position: fixed; inset: 0;
+      background: rgba(0, 0, 0, 0.92);
+      display: flex; flex-direction: column;
+      z-index: 9999;
+      padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+    }
+    #crop-modal[hidden],
+    #crop-preview-modal-m[hidden] { display: none; }
+    .crop-header-m {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 16px;
+      background: var(--bg-elev);
+      border-bottom: 1px solid #333;
+    }
+    .crop-header-m h3 { margin: 0; font-size: 16px; }
+    #crop-close-m {
+      background: transparent; border: 0; color: var(--fg-dim);
+      font-size: 26px; line-height: 1; padding: 4px 10px;
+    }
+    .crop-body-m {
+      flex: 1;
+      overflow: hidden;
+      display: flex; align-items: center; justify-content: center;
+      padding: 8px;
+      min-height: 0;
+    }
+    .crop-body-m img { max-width: 100%; max-height: 100%; display: block; }
+    .crop-actions-m {
+      display: flex; gap: 8px;
+      padding: 12px 16px;
+      background: var(--bg-elev);
+      border-top: 1px solid #333;
+    }
+    .crop-actions-m button {
+      flex: 1; padding: 14px;
+      font-size: 15px; font-weight: 600;
+      border-radius: 6px; border: 1px solid #444;
+      cursor: pointer; min-height: 50px;
+    }
+    .crop-actions-m .crop-btn-secondary-m {
+      background: transparent; color: var(--fg-dim);
+    }
+    .crop-actions-m .crop-btn-primary-m {
+      background: var(--accent); color: #111;
+      border-color: var(--accent);
+    }
+    .crop-actions-m button:disabled { opacity: 0.5; }
+    /* Phase v15.7.16 : rangée dédiée aux boutons de rotation, au-dessus
+       de la rangée d'actions principales. Touch-friendly (50px de haut). */
+    .crop-rotate-row-m {
+      display: flex; gap: 8px;
+      padding: 10px 16px 4px;
+      background: var(--bg-elev);
+    }
+    .crop-rotate-row-m button {
+      flex: 1; padding: 12px;
+      font-size: 14px; font-weight: 500;
+      background: transparent; color: var(--fg);
+      border: 1px solid #444; border-radius: 6px;
+      cursor: pointer; min-height: 48px;
+    }
+    .crop-rotate-row-m button:active {
+      background: rgba(126, 182, 255, 0.15);
+    }
+    /* Phase v15.7.16 : handles Cropper.js plus larges pour le touch.
+       Les 5×5 par défaut sont durs à attraper au doigt → 18-22×18-22. */
+    .cropper-container .cropper-point {
+      width: 18px; height: 18px;
+      background-color: var(--accent);
+      opacity: 0.85;
+    }
+    .cropper-container .cropper-point.point-n,
+    .cropper-container .cropper-point.point-s { margin-left: -9px; }
+    .cropper-container .cropper-point.point-e,
+    .cropper-container .cropper-point.point-w { margin-top: -9px; }
+    .cropper-container .cropper-point.point-ne,
+    .cropper-container .cropper-point.point-nw,
+    .cropper-container .cropper-point.point-se,
+    .cropper-container .cropper-point.point-sw {
+      width: 22px; height: 22px;
+      margin-left: -11px; margin-top: -11px;
+    }
+    .cropper-container .cropper-line { background-color: var(--accent); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>📷 Compagnon : Mobile</h1>
+    <div id="session-info" class="session-info">Connexion…</div>
+  </header>
+  <main>
+    <div class="capture-zone">
+      <label for="capture-input" class="capture-btn" id="capture-label">
+        <span id="capture-emoji">📷</span>
+        <span>Prendre une photo</span>
+      </label>
+      <input type="file" id="capture-input" class="file-input"
+             accept="image/*" capture="environment" multiple>
+      <div class="capture-hint">
+        Multi-shoot supporté. Les photos arrivent en direct dans le champ d'input du Compagnon sur le PC.
+      </div>
+    </div>
+
+    <div class="uploads-section">
+      <h2>En attente d'envoi</h2>
+      <div id="uploads-list" class="uploads-list">
+        <div class="uploads-empty">Aucune photo prise pour l'instant.</div>
+      </div>
+    </div>
+
+    <div class="footer-hint">
+      Les photos sont enregistrées dans le dossier de l'exo courant
+      (<code>COURS/MAT/TYPE/photos/</code>) et ajoutées à la file d'attente
+      du Compagnon. Elles seront jointes au prochain message que tu envoies
+      depuis le PC. Tu peux les <strong>recadrer via ✂</strong> ou les
+      retirer une par une via 🗑.
+    </div>
+  </main>
+
+  <div id="crop-preview-modal-m" hidden>
+    <div class="crop-header-m">
+      <h3>📷 Préparer la photo</h3>
+      <button type="button" id="crop-preview-close-m" title="Annuler">×</button>
+    </div>
+    <div class="crop-body-m">
+      <img id="crop-preview-img-m" alt="Photo à préparer">
+    </div>
+    <div class="crop-rotate-row-m">
+      <button type="button" id="crop-preview-rotate-left-m" class="crop-btn-secondary-m" title="Pivoter à gauche">↺ 90°</button>
+      <button type="button" id="crop-preview-rotate-right-m" class="crop-btn-secondary-m" title="Pivoter à droite">↻ 90°</button>
+    </div>
+    <div class="crop-actions-m">
+      <button type="button" id="crop-preview-cancel-m" class="crop-btn-secondary-m">🗑 Annuler</button>
+      <button type="button" id="crop-preview-reset-m" class="crop-btn-secondary-m">↩ Reset</button>
+      <button type="button" id="crop-preview-skip-m" class="crop-btn-secondary-m">📤 Tel quel</button>
+      <button type="button" id="crop-preview-apply-m" class="crop-btn-primary-m">✂ Recadrer</button>
+    </div>
+  </div>
+
+  <div id="crop-modal" hidden>
+    <div class="crop-header-m">
+      <h3>✂ Rogner la photo</h3>
+      <button type="button" id="crop-close-m" title="Fermer">×</button>
+    </div>
+    <div class="crop-body-m">
+      <img id="crop-img-m" alt="Image à rogner">
+    </div>
+
+    <div class="crop-rotate-row-m">
+      <button type="button" id="crop-rotate-left-m" class="crop-btn-secondary-m" title="Pivoter à gauche">↺ 90°</button>
+      <button type="button" id="crop-rotate-right-m" class="crop-btn-secondary-m" title="Pivoter à droite">↻ 90°</button>
+    </div>
+    <div class="crop-actions-m">
+      <button type="button" id="crop-cancel-m" class="crop-btn-secondary-m">↩ Annuler</button>
+      <button type="button" id="crop-reset-m" class="crop-btn-secondary-m">↻ Reset</button>
+      <button type="button" id="crop-apply-m" class="crop-btn-primary-m">✂ Recadrer</button>
+    </div>
+  </div>
+
+  <script>
+    // Phase v15.7.24 : config Cropper commune. Touch device → dragMode
+    // "move" (tap dans l'image ne casse pas la zone de crop, glisse
+    // l'image). Souris desktop → "crop" (glisser redessine librement).
+    // minCropBoxWidth/Height : empêche zones rikiki accidentelles.
+    function _cropperOptsM() {
+      const isTouch = (navigator.maxTouchPoints > 0) || ("ontouchstart" in window);
+      return {
+        viewMode: 1, autoCropArea: 1, background: false,
+        responsive: true, checkOrientation: true,
+        dragMode: isTouch ? "move" : "crop",
+        minCropBoxWidth: 50, minCropBoxHeight: 50,
+      };
+    }
+
+    const sessionInfo = document.getElementById("session-info");
+    const captureInput = document.getElementById("capture-input");
+    const captureLabel = document.getElementById("capture-label");
+    const uploadsList = document.getElementById("uploads-list");
+
+    // État local : on tient une copie des uploads en cours côté UI pour
+    // afficher le spinner avant que le polling ne récupère le serveur.
+    const localUploads = new Map();  // tempId → {file, status, error?}
+
+    async function refreshSession() {
+      try {
+        const r = await fetch("/api/pending_attachments");
+        if (!r.ok) {
+          sessionInfo.textContent = `Erreur ${r.status} (backend ?)`;
+          sessionInfo.classList.add("inactive");
+          return;
+        }
+        const data = await r.json();
+        if (!data.active_session) {
+          sessionInfo.textContent = "Pas de session active sur le PC";
+          sessionInfo.classList.add("inactive");
+          captureInput.disabled = true;
+          captureLabel.style.opacity = "0.4";
+        } else {
+          sessionInfo.textContent = "→ " + (data.session_label || "session active");
+          sessionInfo.classList.remove("inactive");
+          captureInput.disabled = false;
+          captureLabel.style.opacity = "";
+        }
+        renderUploads(data.attachments || []);
+      } catch (e) {
+        sessionInfo.textContent = "Connexion perdue : " + e.message;
+        sessionInfo.classList.add("inactive");
+      }
+    }
+
+    function renderUploads(serverAtts) {
+      uploadsList.innerHTML = "";
+      // 1. Uploads locaux en cours (pas encore connus du serveur)
+      for (const [tempId, st] of localUploads.entries()) {
+        if (st.status === "uploading" || st.status === "error") {
+          uploadsList.appendChild(makeItem({
+            tempId, name: st.file.name, size: st.file.size,
+            status: st.status, error: st.error, isImage: true,
+          }));
+        }
+      }
+      // 2. Uploads connus du serveur
+      if (serverAtts.length === 0 && localUploads.size === 0) {
+        const empty = document.createElement("div");
+        empty.className = "uploads-empty";
+        empty.textContent = "Aucune photo prise pour l'instant.";
+        uploadsList.appendChild(empty);
+        return;
+      }
+      for (const att of serverAtts) {
+        uploadsList.appendChild(makeItem({
+          serverId: att.id,
+          name: att.original_name || att.filename,
+          size: att.size_bytes,
+          status: "ok",
+          isImage: !!att.is_image,
+          relPath: att.rel_path,
+          storage: att.storage,  // Phase A.10.2
+        }));
+      }
+    }
+
+    // Phase A.10.2 : helper miroir de _attachmentSrcUrl côté desktop.
+    // Route vers /api/upload_file (uploads A.10.2+) ou /api/cours_file
+    // (legacy / backfilled) selon att.storage.
+    function _attachmentSrcUrlM(att) {
+      if (!att || !att.rel_path) return "";
+      const storage = att.storage || "cours";
+      const endpoint = storage === "uploads" ? "/api/upload_file" : "/api/cours_file";
+      return `${endpoint}?path=${encodeURIComponent(att.rel_path)}`;
+    }
+
+    function makeItem({ tempId, serverId, name, size, status, error, isImage, relPath, storage }) {
+      const item = document.createElement("div");
+      item.className = "upload-item " + (status === "uploading" ? "uploading" : status === "error" ? "error" : "");
+      const thumb = document.createElement("div");
+      thumb.className = "upload-thumb";
+      if (isImage && relPath) {
+        const img = document.createElement("img");
+        img.src = _attachmentSrcUrlM({ rel_path: relPath, storage });
+        img.alt = "";
+        img.style.cssText = "width:100%;height:100%;object-fit:cover;border-radius:4px;";
+        thumb.appendChild(img);
+      } else if (isImage) {
+        thumb.textContent = "🖼";
+      } else {
+        thumb.textContent = "📄";
+      }
+      const info = document.createElement("div"); info.className = "upload-info";
+      const nameEl = document.createElement("div"); nameEl.className = "upload-name";
+      nameEl.textContent = name; info.appendChild(nameEl);
+      const meta = document.createElement("div"); meta.className = "upload-meta";
+      meta.textContent = formatSize(size) + (status === "uploading" ? " • envoi…" : status === "error" ? ` • ${error || "échec"}` : "");
+      info.appendChild(meta);
+      item.appendChild(thumb); item.appendChild(info);
+
+      if (status === "ok" && serverId) {
+        const status_el = document.createElement("span");
+        status_el.className = "upload-status ok"; status_el.textContent = "✓";
+        item.appendChild(status_el);
+        // Phase v15.7.10 : bouton ✂ Rogner pour les images uniquement
+        if (isImage && relPath) {
+          const crop = document.createElement("button");
+          crop.className = "upload-crop"; crop.type = "button";
+          crop.textContent = "✂"; crop.title = "Rogner cette photo";
+          crop.addEventListener("click", () => openCropModal({ id: serverId, rel_path: relPath, original_name: name }));
+          item.appendChild(crop);
+        }
+        const del = document.createElement("button");
+        del.className = "upload-del"; del.type = "button";
+        del.textContent = "🗑"; del.title = "Retirer de la file";
+        del.addEventListener("click", async () => {
+          if (!confirm("Retirer cette photo de la file d'envoi ? (le fichier reste sur disque)")) return;
+          try {
+            await fetch(`/api/pending_attachments/${encodeURIComponent(serverId)}`, { method: "DELETE" });
+            refreshSession();
+          } catch (e) { alert("Erreur : " + e.message); }
+        });
+        item.appendChild(del);
+      } else if (status === "uploading") {
+        const sp = document.createElement("span");
+        sp.className = "upload-status pending"; sp.textContent = "⏳";
+        item.appendChild(sp);
+      } else if (status === "error") {
+        const sp = document.createElement("span");
+        sp.className = "upload-status err"; sp.textContent = "⚠";
+        item.appendChild(sp);
+        const retry = document.createElement("button");
+        retry.className = "upload-del"; retry.type = "button";
+        retry.textContent = "↻"; retry.title = "Réessayer";
+        retry.addEventListener("click", () => {
+          const st = localUploads.get(tempId);
+          if (st && st.file) uploadOne(st.file);
+          localUploads.delete(tempId);
+        });
+        item.appendChild(retry);
+      }
+      return item;
+    }
+
+    function formatSize(bytes) {
+      if (!bytes) return "0";
+      if (bytes < 1024) return bytes + " B";
+      if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " kB";
+      return (bytes / 1024 / 1024).toFixed(1) + " MB";
+    }
+
+    async function uploadOne(file) {
+      const tempId = "tmp_" + Math.random().toString(36).slice(2, 10);
+      localUploads.set(tempId, { file, status: "uploading" });
+      refreshSession();  // affiche la pending tout de suite
+      const fd = new FormData();
+      fd.append("file", file, file.name);
+      try {
+        const r = await fetch("/api/upload_attachment", { method: "POST", body: fd });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          localUploads.set(tempId, { file, status: "error", error: data.error || `HTTP ${r.status}` });
+        } else {
+          localUploads.delete(tempId);  // serveur le connaît maintenant
+        }
+      } catch (e) {
+        localUploads.set(tempId, { file, status: "error", error: e.message });
+      }
+      refreshSession();
+    }
+
+    captureInput.addEventListener("change", async (e) => {
+      const files = Array.from(e.target.files || []);
+      if (!files.length) return;
+      // Reset input pour permettre re-prise du même fichier après
+      e.target.value = "";
+      // Phase v15.7.22 : preview Cropper avant upload (UX Clipboard_Relay).
+      // Si le fichier est une image, on ouvre la modal preview AVANT
+      // d'appeler uploadOne. L'utilisateur peut crop+rotate, "Envoyer
+      // tel quel", ou Annuler. Pour les non-images (rare via captureInput
+      // qui est accept="image/*"), upload direct.
+      for (const f of files) {
+        let toUpload = f;
+        if (f.type && f.type.startsWith("image/")) {
+          const previewResult = await _openCropPreviewModalM(f);
+          if (previewResult === null) continue;  // user a annulé
+          toUpload = previewResult;
+        }
+        await uploadOne(toUpload);
+      }
+    });
+
+    // Polling 2s pour rester en sync avec le serveur (et voir si une photo
+    // a été supprimée depuis le PC).
+    refreshSession();
+    setInterval(refreshSession, 2000);
+
+    // ==================== Phase v15.7.10 : Modal crop ====================
+    let cropperInstance = null;
+    let cropTargetAttId = null;
+    const cropModal = document.getElementById("crop-modal");
+    const cropImg = document.getElementById("crop-img-m");
+    const cropCloseBtn = document.getElementById("crop-close-m");
+    const cropCancelBtn = document.getElementById("crop-cancel-m");
+    const cropResetBtn = document.getElementById("crop-reset-m");
+    const cropApplyBtn = document.getElementById("crop-apply-m");
+
+    function openCropModal(att) {
+      if (!cropModal || !cropImg) return;
+      if (typeof Cropper === "undefined") {
+        alert("Cropper.js non chargé. Recharge la page.");
+        return;
+      }
+      cropTargetAttId = att.id;
+      // Phase A.10.2 : route selon att.storage
+      cropImg.src = `${_attachmentSrcUrlM(att)}&t=${Date.now()}`;
+      cropImg.alt = att.original_name || "Photo";
+      cropModal.hidden = false;
+      cropImg.onload = () => {
+        if (cropperInstance) {
+          try { cropperInstance.destroy(); } catch (_) {}
+          cropperInstance = null;
+        }
+        cropperInstance = new Cropper(cropImg, _cropperOptsM());
+      };
+    }
+
+    function closeCropModal() {
+      if (!cropModal) return;
+      cropModal.hidden = true;
+      if (cropperInstance) {
+        try { cropperInstance.destroy(); } catch (_) {}
+        cropperInstance = null;
+      }
+      cropTargetAttId = null;
+      if (cropImg) { cropImg.src = ""; cropImg.onload = null; }
+    }
+
+    async function applyCrop() {
+      if (!cropperInstance || !cropTargetAttId) return;
+      const attId = cropTargetAttId;
+      let canvas;
+      try {
+        canvas = cropperInstance.getCroppedCanvas({
+          maxWidth: 2000, maxHeight: 2000,
+          imageSmoothingEnabled: true, imageSmoothingQuality: "high",
+        });
+      } catch (e) { alert("Erreur Cropper : " + e.message); return; }
+      if (!canvas) { alert("Aucune zone à recadrer."); return; }
+      cropApplyBtn.disabled = true;
+      cropApplyBtn.textContent = "⏳…";
+      const blob = await new Promise(resolve => {
+        canvas.toBlob(resolve, "image/jpeg", 0.92);
+      });
+      if (!blob) {
+        alert("Échec de l'export du canvas.");
+        cropApplyBtn.disabled = false;
+        cropApplyBtn.textContent = "✂ Recadrer";
+        return;
+      }
+      const fd = new FormData();
+      fd.append("file", blob, `cropped_${Date.now()}.jpg`);
+      try {
+        const r = await fetch(
+          `/api/pending_attachments/${encodeURIComponent(attId)}/replace`,
+          { method: "POST", body: fd },
+        );
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          alert("Recadrage échoué : " + (data.error || r.status));
+          return;
+        }
+        refreshSession();
+        closeCropModal();
+      } catch (e) { alert("Erreur réseau crop : " + e.message);
+      } finally {
+        cropApplyBtn.disabled = false;
+        cropApplyBtn.textContent = "✂ Recadrer";
+      }
+    }
+
+    if (cropCloseBtn) cropCloseBtn.addEventListener("click", closeCropModal);
+    if (cropCancelBtn) cropCancelBtn.addEventListener("click", closeCropModal);
+    if (cropResetBtn) cropResetBtn.addEventListener("click", () => {
+      if (cropperInstance) cropperInstance.reset();
+    });
+    if (cropApplyBtn) cropApplyBtn.addEventListener("click", applyCrop);
+
+    // ==================== Phase v15.7.22 : Modal PREVIEW avant upload ====================
+    // Pattern emprunté à Clipboard_Relay v0.1.5 : auto-preview Cropper
+    // dès que captureInput change, AVANT d'appeler uploadOne. L'user
+    // peut crop+rotate, « Envoyer tel quel » (skip crop), ou Annuler.
+    // Modal séparée de #crop-modal (qui sert au re-crop d'attachments
+    // déjà uploadés via le bouton ✂ du tray, Phase v15.7.10).
+
+    let cropPreviewInstanceM = null;
+    let cropPreviewResolveM = null;
+    const cropPreviewModalM = document.getElementById("crop-preview-modal-m");
+    const cropPreviewImgM = document.getElementById("crop-preview-img-m");
+    const cropPreviewCloseM = document.getElementById("crop-preview-close-m");
+    const cropPreviewCancelM = document.getElementById("crop-preview-cancel-m");
+    const cropPreviewRotateLeftM = document.getElementById("crop-preview-rotate-left-m");
+    const cropPreviewRotateRightM = document.getElementById("crop-preview-rotate-right-m");
+    const cropPreviewResetM = document.getElementById("crop-preview-reset-m");
+    const cropPreviewSkipM = document.getElementById("crop-preview-skip-m");
+    const cropPreviewApplyM = document.getElementById("crop-preview-apply-m");
+
+    function _openCropPreviewModalM(file) {
+      return new Promise((resolve) => {
+        if (!cropPreviewModalM || !cropPreviewImgM) {
+          resolve(file);  // modal pas dans le DOM → upload direct
+          return;
+        }
+        if (typeof Cropper === "undefined") {
+          console.warn("Cropper.js non chargé : upload direct.");
+          resolve(file);
+          return;
+        }
+        cropPreviewResolveM = resolve;
+        cropPreviewModalM._originalFile = file;  // pour Skip
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          cropPreviewImgM.src = e.target.result;
+          cropPreviewModalM.hidden = false;
+          cropPreviewImgM.onload = () => {
+            if (cropPreviewInstanceM) {
+              try { cropPreviewInstanceM.destroy(); } catch (_) {}
+              cropPreviewInstanceM = null;
+            }
+            cropPreviewInstanceM = new Cropper(cropPreviewImgM, _cropperOptsM());
+          };
+        };
+        reader.readAsDataURL(file);
+      });
+    }
+
+    function _closeCropPreviewModalM(result) {
+      if (!cropPreviewModalM) return;
+      cropPreviewModalM.hidden = true;
+      if (cropPreviewInstanceM) {
+        try { cropPreviewInstanceM.destroy(); } catch (_) {}
+        cropPreviewInstanceM = null;
+      }
+      if (cropPreviewImgM) { cropPreviewImgM.src = ""; cropPreviewImgM.onload = null; }
+      delete cropPreviewModalM._originalFile;
+      if (cropPreviewResolveM) {
+        const r = cropPreviewResolveM;
+        cropPreviewResolveM = null;
+        r(result);
+      }
+    }
+
+    if (cropPreviewCloseM) cropPreviewCloseM.addEventListener("click", () => _closeCropPreviewModalM(null));
+    if (cropPreviewCancelM) cropPreviewCancelM.addEventListener("click", () => _closeCropPreviewModalM(null));
+    if (cropPreviewRotateLeftM) cropPreviewRotateLeftM.addEventListener("click", () => {
+      if (cropPreviewInstanceM) cropPreviewInstanceM.rotate(-90);
+    });
+    if (cropPreviewRotateRightM) cropPreviewRotateRightM.addEventListener("click", () => {
+      if (cropPreviewInstanceM) cropPreviewInstanceM.rotate(90);
+    });
+    if (cropPreviewResetM) cropPreviewResetM.addEventListener("click", () => {
+      if (cropPreviewInstanceM) cropPreviewInstanceM.reset();
+    });
+    if (cropPreviewSkipM) cropPreviewSkipM.addEventListener("click", () => {
+      const file = cropPreviewModalM._originalFile;
+      _closeCropPreviewModalM(file || null);
+    });
+    if (cropPreviewApplyM) cropPreviewApplyM.addEventListener("click", async () => {
+      if (!cropPreviewInstanceM) return;
+      cropPreviewApplyM.disabled = true;
+      const orig = cropPreviewApplyM.textContent;
+      cropPreviewApplyM.textContent = "⏳…";
+      try {
+        const canvas = cropPreviewInstanceM.getCroppedCanvas({
+          maxWidth: 2000, maxHeight: 2000,
+          imageSmoothingEnabled: true, imageSmoothingQuality: "high",
+        });
+        if (!canvas) { alert("Aucune zone à recadrer."); return; }
+        const blob = await new Promise(r => canvas.toBlob(r, "image/jpeg", 0.92));
+        if (!blob) { alert("Échec export canvas."); return; }
+        const fname = "cropped_" + Date.now() + ".jpg";
+        const cropped = new File([blob], fname, { type: "image/jpeg" });
+        _closeCropPreviewModalM(cropped);
+      } catch (e) {
+        alert("Erreur cropper : " + e.message);
+      } finally {
+        cropPreviewApplyM.disabled = false;
+        cropPreviewApplyM.textContent = orig;
+      }
+    });
+    // Phase v15.7.16 : rotation 90° dans les 2 sens (photos prises de
+    // travers avec EXIF faux : téléphone tenu en biais).
+    const cropRotateLeftBtn = document.getElementById("crop-rotate-left-m");
+    const cropRotateRightBtn = document.getElementById("crop-rotate-right-m");
+    if (cropRotateLeftBtn) cropRotateLeftBtn.addEventListener("click", () => {
+      if (cropperInstance) cropperInstance.rotate(-90);
+    });
+    if (cropRotateRightBtn) cropRotateRightBtn.addEventListener("click", () => {
+      if (cropperInstance) cropperInstance.rotate(90);
+    });
+  </script>
+</body>
+</html>

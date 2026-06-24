@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="robots" content="noindex, nofollow, noarchive">
+  <meta name="referrer" content="no-referrer">
+  <title>Compagnon de révision</title>
+  <link rel="stylesheet" href="/static/style.css{{ static_v('style.css') }}">
+
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
+
+  <link rel="stylesheet" href="/static/vendor/cropperjs/cropper.min.css">
+  <script defer src="/static/vendor/cropperjs/cropper.min.js"></script>
+
+  <script defer src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
+</head>
+<body>
+  <div class="layout">
+    <main id="dialogue">
+      <header id="dialogue-header">
+        <form id="start-form">
+          <span>Démarrer :</span>
+
+          <select name="source" id="start-form-source" title="Source du contenu : COURS (L1 Info) ou Droit (produit par Cartable)">
+            <option value="cours" selected>📚 COURS</option>
+            <option value="droit">⚖️ Droit</option>
+          </select>
+          <select name="matiere" title="Matière" required>
+            <option value="">Matière…</option>
+          </select>
+          <select name="type" title="Type" required disabled>
+            <option value="">Type…</option>
+          </select>
+          <select name="num" title="Numéro" required disabled>
+            <option value="">N°…</option>
+          </select>
+          <select name="annee" title="Année (CC seulement)" disabled hidden>
+            <option value="">—</option>
+          </select>
+          <select name="exo" title="Exercice (full = tout)" required disabled>
+            <option value="">Exo…</option>
+          </select>
+
+          <select name="droit_matiere" id="start-form-droit-matiere" title="Matière (Droit)" hidden disabled>
+            <option value="">Matière…</option>
+          </select>
+          <select name="droit_type" id="start-form-droit-type" title="Type (CM / TD)" hidden disabled>
+            <option value="">Type…</option>
+          </select>
+          <select name="droit_num" id="start-form-droit-num" title="Séance (numéro de CM/TD)" hidden disabled>
+            <option value="">N°…</option>
+          </select>
+          <select name="mode" title="Découverte = tuteur explicateur zéro prérequis (Phase A.8) ; Colle = interrogation pure ; Guidé = tuteur slide-par-slide + accès FS Read/Grep + suggestions de correction">
+            <option value="découverte">🌱 Découverte</option>
+            <option value="colle" selected>🎯 Colle</option>
+            <option value="guidé">📖 Guidé</option>
+          </select>
+          <select name="colle_format" id="start-form-colle-format" title="Phase A.8.2. Format : oral (pas de photo, ancrage par répétition orale) ; photos (papier + cahier, photos régulières de validation) ; mixte (défaut, au cas par cas). En mode colle pilote la gestion des objets structurés (§1.6 COMPAGNON). En mode découverte pilote l'ancrage mnémonique (§1.6ter DECOUVERTE). Bascule via chips ou /oral /photos /mixte.">
+            <option value="mixte">🔀 Mixte</option>
+            <option value="oral">🎙 Oral</option>
+            <option value="photos">📸 Photos</option>
+          </select>
+          <select name="corrige_anchor" id="start-form-corrige-anchor" title="Phase v15.7.30. Ancrage corrigé : strict (défaut, corrigé fait foi) ; consultatif (corrigé visible mais cité comme point de vue parmi d'autres) ; aucun (corrigé pas injecté dans le contexte). Bascule possible en cours de séance via les chips ou /strict /consultatif /sans_corrigé.">
+            <option value="strict">📘 Strict</option>
+            <option value="consultatif">📖 Consultatif</option>
+            <option value="aucun">🚫 Sans corrigé</option>
+          </select>
+          <label class="start-form-toggle" title="Phase v15.7.36.5. Le tuteur invente ses propres questions/exos depuis l'annale et l'aide-mémoire au lieu de suivre un énoncé existant. Utile pour la révision globale d'un thème.">
+            <input type="checkbox" name="ignore_enonce" id="start-form-ignore-enonce">
+            🎲 Sans énoncé
+          </label>
+          <label class="start-form-toggle" title="Phase A.8.3. Apprendre un sujet hors COURS/ (ex: « apprendre Python »). Le tuteur s'appuie sur ses connaissances LLM, pose des questions de cadrage au 1er tour, puis enseigne. Mode guidé indisponible en sujet libre.">
+            <input type="checkbox" name="sujet_libre_mode" id="start-form-sujet-libre-mode">
+            💡 Sujet libre
+          </label>
+          <button type="button" id="form-rescan" title="Rescan COURS/ pour rafraîchir les options">🔄</button>
+          <button type="submit">Lancer</button>
+          <span id="session-info"></span>
+          <span id="engine-switcher-wrap" title="Moteur courant (bascule à chaud, synchro avec la GUI Tkinter)">
+            <label for="engine-switcher" class="engine-label">Moteur</label>
+            <select id="engine-switcher" disabled>
+              <option value="">…</option>
+            </select>
+          </span>
+
+          <div id="form-toggle-warnings" class="form-toggle-warnings" hidden>
+            <div data-for="ignore_enonce" class="form-toggle-warning" hidden>
+              ⚠ <strong>Sans énoncé activé.</strong> Le tuteur ignorera
+              l'énoncé du disque et inventera ses propres questions. Décoche
+              si tu veux qu'il suive l'énoncé du TD/TP comme d'habitude.
+            </div>
+            <div data-for="sujet_libre_mode" class="form-toggle-warning" hidden>
+              ⚠ <strong>Sujet libre activé.</strong> Tu vas apprendre un
+              sujet HORS COURS/ : le tuteur s'appuiera uniquement sur ses
+              connaissances LLM, sans matériel académique. Mode guidé
+              indisponible. Décoche si tu veux rester sur ton matériel COURS.
+            </div>
+          </div>
+        </form>
+
+        <div id="sujet-libre-zone" hidden>
+          <label for="start-form-sujet-libre-text" class="sujet-libre-label">
+            💡 Décris ton sujet (1-3 phrases) :
+          </label>
+          <textarea id="start-form-sujet-libre-text" rows="2" placeholder="Ex : je veux apprendre Python pour scrapper le web"></textarea>
+
+        </div>
+      </header>
+
+      <div id="dialogue-stream">
+        <p class="placeholder">Pas de session active. Renseigne les champs et clique Lancer.</p>
+      </div>
+      <div id="attachments-tray" hidden></div>
+      <footer id="dialogue-input">
+        <button id="mic-btn" type="button" disabled title="Cliquer pour démarrer / arrêter l'enregistrement vocal">🎤</button>
+
+        <button id="photo-btn" type="button" disabled title="Prendre une photo (mobile : caméra ; desktop : passer sur téléphone)">📷</button>
+        <input id="photo-input" type="file" accept="image/*" capture="environment" style="display:none">
+        <button id="media-btn" type="button" disabled title="Joindre un fichier (image, PDF, Excel…)">📎</button>
+        <input id="media-input" type="file" multiple style="display:none">
+        <button id="rewrite-btn" type="button" disabled title="Améliorer le brouillon avant envoi (reformuler, resserrer, développer, corriger fautes)">✨</button>
+        <div id="rewrite-popover" hidden role="menu">
+          <div class="rewrite-popover-title">Améliorer le brouillon</div>
+          <button class="rewrite-action" type="button" data-intent="reformulate">
+            <span class="rewrite-icon">📝</span>
+            <span class="rewrite-label">Reformuler</span>
+            <span class="rewrite-hint">Plus clair et naturel, sens identique</span>
+          </button>
+          <button class="rewrite-action" type="button" data-intent="concise">
+            <span class="rewrite-icon">✂️</span>
+            <span class="rewrite-label">Plus concis</span>
+            <span class="rewrite-hint">Supprime hésitations et redondances</span>
+          </button>
+          <button class="rewrite-action" type="button" data-intent="expand">
+            <span class="rewrite-icon">📖</span>
+            <span class="rewrite-label">Développer</span>
+            <span class="rewrite-hint">Explicite les nuances implicites</span>
+          </button>
+          <button class="rewrite-action" type="button" data-intent="fix_typos">
+            <span class="rewrite-icon">✅</span>
+            <span class="rewrite-label">Corriger fautes</span>
+            <span class="rewrite-hint">Orthographe, grammaire, ponctuation</span>
+          </button>
+          <button id="rewrite-undo" type="button" hidden>
+            <span class="rewrite-icon">↩</span>
+            <span class="rewrite-label">Annuler le dernier rewrite</span>
+          </button>
+        </div>
+        <textarea id="user-input" rows="1" placeholder="Tape ta réponse, ou clique 🎤 pour la dicter…" disabled></textarea>
+        <button id="send-btn" disabled>Envoyer</button>
+      </footer>
+    </main>
+    <aside id="sidebar">
+      <div id="guided-panel" hidden>
+        <div id="guided-header">
+          <h2>Mode guidé</h2>
+          <span id="guided-counter">— / —</span>
+        </div>
+        <div id="guided-slide-img-wrap">
+          <img id="guided-slide-img" alt="Slide" hidden>
+          <div id="guided-slide-placeholder" class="placeholder">Chargement…</div>
+        </div>
+        <div id="guided-slide-meta">
+          <div id="guided-slide-title">—</div>
+          <div id="guided-slide-duration"></div>
+        </div>
+        <div id="guided-nav">
+          <button id="guided-prev" type="button" title="Slide précédente (←)">⬅</button>
+          <button id="guided-jump" type="button" title="Aller à une slide…">🎯</button>
+          <button id="guided-next" type="button" title="Slide suivante (→ ou Espace)">➡</button>
+        </div>
+        <button id="guided-remind-nav-btn" type="button" hidden title="Réinjecte le rappel auto-advance dans la conv (utile si le tuteur a oublié de naviguer en cours de session)">🤖 Rappeler nav au tuteur</button>
+      </div>
+
+      <div id="sidebar-tabs" role="tablist">
+        <button class="sb-tab active" data-tab="quota" role="tab" type="button" title="Quota Pro Max">📊</button>
+        <button class="sb-tab" data-tab="corrige" role="tab" type="button" title="Documents (énoncé / corrigé / script)">📚</button>
+        <button class="sb-tab" data-tab="notes" role="tab" type="button" title="Notes sauvegardées (sélections de texte épinglées)">🔖</button>
+        <button class="sb-tab" data-tab="photos" role="tab" type="button" title="Galerie photos de la séance">📸</button>
+        <button class="sb-tab" data-tab="stickies" role="tab" type="button" title="Consignes épinglées (mémoire persistante)">📌</button>
+        <button class="sb-tab" data-tab="colors" role="tab" type="button" title="Personnaliser les couleurs cahier (rétroactif + applique-à-sélection)">🎨</button>
+        <button class="sb-tab" data-tab="history" role="tab" type="button" title="Historique des sessions">💬</button>
+        <button class="sb-tab" data-tab="mobile" role="tab" type="button" title="Accès distant (LAN / Tailscale / Cloudflare)">🔗</button>
+        <button class="sb-tab" data-tab="tips" role="tab" type="button" title="Astuces et raccourcis">🎓</button>
+      </div>
+      <div id="sidebar-tab-content">
+        <div class="sb-pane active" data-pane="quota">
+          <h2>Quota Pro Max</h2>
+          <div id="quota-content">…</div>
+        </div>
+        <div class="sb-pane" data-pane="corrige">
+
+          <div id="outline-panel">
+            <div id="outline-header">
+              <h3>📑 Sommaire de la séance</h3>
+              <button id="outline-refresh" type="button" title="Recharger">🔄</button>
+            </div>
+            <div id="outline-list">
+              <div class="outline-empty">Le tuteur n'a pas encore introduit de section/question structurée. Ce sommaire s'enrichit automatiquement au fil des réponses.</div>
+            </div>
+          </div>
+          <div id="corrige-header">
+            <h2>Documents (énoncé · corrigé · script)</h2>
+            <select id="corrige-picker" title="Choisir le document à afficher" hidden></select>
+          </div>
+          <div id="corrige-img-wrap">
+            <img id="corrige-page-img" alt="Page de corrigé" hidden>
+            <div id="corrige-placeholder" class="placeholder">Aucune session active.</div>
+          </div>
+          <div id="corrige-meta">
+            <div id="corrige-counter">— / —</div>
+            <div id="corrige-pdf-name"></div>
+          </div>
+          <div id="corrige-nav">
+            <button id="corrige-prev" type="button" title="Page précédente">⬅</button>
+            <button id="corrige-jump" type="button" title="Aller à une page…">🎯</button>
+            <button id="corrige-next" type="button" title="Page suivante">➡</button>
+          </div>
+        </div>
+
+        <div class="sb-pane" data-pane="notes">
+          <div id="notes-header">
+            <h2>🔖 Notes sauvegardées</h2>
+            <button id="notes-refresh" type="button" title="Recharger la liste">🔄</button>
+          </div>
+          <div id="notes-list">
+            <div class="notes-empty">Aucune note pour l'instant.</div>
+          </div>
+        </div>
+
+        <div class="sb-pane" data-pane="photos">
+          <div id="photos-header">
+            <h2>📸 Photos de la séance</h2>
+            <button id="photos-refresh" type="button" title="Recharger la galerie">🔄</button>
+          </div>
+          <div id="photos-grid">
+            <div class="photos-empty">Aucune photo pour l'instant.</div>
+          </div>
+        </div>
+
+        <div class="sb-pane" data-pane="stickies">
+          <div id="stickies-header">
+            <h2>📌 Consignes épinglées</h2>
+            <div class="stickies-header-actions">
+              <button id="stickies-import" type="button" title="Importer des consignes depuis une autre session">📋 Importer…</button>
+              <button id="stickies-refresh" type="button" title="Recharger la liste">🔄</button>
+            </div>
+          </div>
+          <div id="stickies-list">
+            <div class="stickies-empty">Aucune consigne épinglée.</div>
+          </div>
+        </div>
+        <div class="sb-pane" data-pane="history">
+          <div id="history-header">
+            <h2>Sessions</h2>
+            <button id="history-refresh" type="button" title="Recharger la liste">🔄</button>
+          </div>
+          <div id="history-list">
+            <div class="history-empty">Chargement…</div>
+          </div>
+        </div>
+        <div class="sb-pane" data-pane="mobile">
+          <h2>Accès distant</h2>
+          <div id="connection-content">…</div>
+        </div>
+
+        <div class="sb-pane" data-pane="tips">
+          <div id="tips-header">
+            <h2>🎓 Astuces et raccourcis</h2>
+          </div>
+          <div id="tips-list">
+            <div class="tips-empty">Chargement…</div>
+          </div>
+        </div>
+        <div class="sb-pane" data-pane="colors">
+          <div id="colors-header">
+            <h2>🎨 Couleurs cahier</h2>
+            <p class="colors-desc">
+              Change la couleur associée à chaque rôle pédagogique. Le changement
+              est <strong>rétroactif</strong> : toutes les cartes cahier existantes
+              utilisant ce rôle se mettent à jour instantanément (via CSS variables).
+              Préférences persistées dans <code>localStorage</code>.
+            </p>
+          </div>
+          <div id="colors-list">
+
+          </div>
+          <div id="colors-footer">
+            <button type="button" id="colors-reset-btn">↺ Reset aux valeurs par défaut</button>
+          </div>
+        </div>
+      </div>
+      <div id="sidebar-footer">
+        <div id="record-indicator">Maintenir [Espace] pour parler</div>
+        <div id="sidebar-footer-actions">
+          <button id="export-recap-btn" type="button" disabled title="Exporter la séance courante en PDF + Markdown (zip téléchargé)">📄 Récap</button>
+          <button id="end-session" disabled>Terminer la séance</button>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <div id="lightbox" hidden>
+    <img id="lightbox-img" alt="Slide aggrandie">
+    <div id="lightbox-hint">Clic n'importe où ou Échap pour fermer</div>
+  </div>
+
+  <div id="crop-modal" hidden>
+    <div class="crop-card">
+      <div class="crop-header">
+        <h3>✂ Rogner la photo</h3>
+        <button type="button" id="crop-close" title="Fermer (Échap)">×</button>
+      </div>
+      <div class="crop-body">
+        <img id="crop-img" alt="Image à rogner">
+      </div>
+      <div class="crop-actions">
+        <button type="button" id="crop-cancel" class="crop-btn-secondary">↩ Annuler</button>
+
+        <button type="button" id="crop-rotate-left" class="crop-btn-secondary" title="Pivoter à gauche (90°)">↺ 90°</button>
+        <button type="button" id="crop-rotate-right" class="crop-btn-secondary" title="Pivoter à droite (90°)">↻ 90°</button>
+        <button type="button" id="crop-reset" class="crop-btn-secondary" title="Réinitialiser la sélection">↻ Reset</button>
+        <button type="button" id="crop-apply" class="crop-btn-primary">✂ Recadrer & remplacer</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="crop-preview-modal" hidden>
+    <div class="crop-card">
+      <div class="crop-header">
+        <h3>📷 Préparer la photo</h3>
+        <button type="button" id="crop-preview-close" title="Annuler (Échap)">×</button>
+      </div>
+      <div class="crop-body">
+        <img id="crop-preview-img" alt="Photo à préparer">
+      </div>
+      <div class="crop-actions">
+        <button type="button" id="crop-preview-cancel" class="crop-btn-secondary">🗑 Annuler</button>
+        <button type="button" id="crop-preview-rotate-left" class="crop-btn-secondary" title="Pivoter à gauche (90°)">↺ 90°</button>
+        <button type="button" id="crop-preview-rotate-right" class="crop-btn-secondary" title="Pivoter à droite (90°)">↻ 90°</button>
+        <button type="button" id="crop-preview-reset" class="crop-btn-secondary" title="Réinitialiser la sélection">↩ Reset</button>
+        <button type="button" id="crop-preview-skip" class="crop-btn-secondary" title="Envoyer la photo originale sans recadrage">📤 Envoyer tel quel</button>
+        <button type="button" id="crop-preview-apply" class="crop-btn-primary">✂ Recadrer &amp; ajouter</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="stickies-import-modal" hidden>
+    <div class="sim-card">
+      <div class="sim-header">
+        <h3>📋 Importer des consignes depuis…</h3>
+        <button type="button" id="sim-close" title="Fermer (Échap)">×</button>
+      </div>
+      <div class="sim-body">
+        <div id="sim-step1" class="sim-step">
+          <div class="sim-hint">Choisis la session source :</div>
+          <div id="sim-sessions-list">
+            <div class="sim-empty">Chargement…</div>
+          </div>
+        </div>
+        <div id="sim-step2" class="sim-step" hidden>
+          <div class="sim-hint">
+            <button type="button" id="sim-back-step1" class="sim-link">← Changer de session</button>
+            <span id="sim-step2-label"></span>
+          </div>
+          <div id="sim-stickies-list">
+            <div class="sim-empty">Chargement…</div>
+          </div>
+          <div class="sim-actions">
+            <button type="button" id="sim-cancel" class="sim-btn-secondary">↩ Annuler</button>
+            <button type="button" id="sim-toggle-all" class="sim-btn-secondary">☑ Tout cocher</button>
+            <button type="button" id="sim-import" class="sim-btn-primary">📥 Importer la sélection</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="start-conflict-modal" hidden>
+    <div class="scm-card">
+      <h3>Session existante détectée</h3>
+      <div class="scm-msg" id="scm-msg">Une session existe déjà pour cet exercice.</div>
+      <div class="scm-meta" id="scm-meta"></div>
+      <div class="scm-actions">
+        <button type="button" class="scm-resume" id="scm-resume-btn">✅ Reprendre la session existante</button>
+        <button type="button" class="scm-keep-old" id="scm-keep-old-btn">📑 Démarrer une nouvelle (conserver l'ancienne, suffixe _2/_3…)</button>
+        <button type="button" class="scm-overwrite" id="scm-overwrite-btn">🔄 Démarrer une nouvelle (l'ancienne sera supprimée)</button>
+        <button type="button" class="scm-cancel" id="scm-cancel-btn">↩ Annuler</button>
+      </div>
+    </div>
+  </div>
+  <script src="/static/app.js{{ static_v('app.js') }}"></script>
+</body>
+</html>
