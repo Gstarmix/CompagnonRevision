@@ -785,7 +785,7 @@ C'est l'évolution naturelle du prompt engineering en 2025-2026 :
 
 ### Méthode recommandée : GUI (Phase A.6)
 
-**Double-clic sur `start_gui.vbs`** (lanceur silencieux Windows). Ça ouvre une fenêtre Tkinter avec :
+**Double-clic sur `start_gui.vbs`** (lanceur silencieux Windows). Ça ouvre une fenêtre Tkinter (depuis l'harmonisation du 2026-07-02, elle porte le thème sombre ambre de l'application Cartable, comme le front web) avec :
 - formulaire de lancement (matière, type, num, exo, année, flags), auto-persisté à chaque cascade dans `_secrets/gui_state.json`
 - quota Pro Max live (4 barres + seuils session/hebdo éditables, **auto-save 500 ms** dans `_secrets/runtime_settings.json` ; bouton « 🔄 Recharger depuis disque » pour réimporter après édition manuelle du JSON)
 - choix moteur (CLI subscription / API Anthropic) sauvegardé à la volée
@@ -817,7 +817,11 @@ python compagnon.py AN1 TD 5 3
 python compagnon.py EN1 CC 1 full --annee 2025-26
 ```
 
-→ ouvre le navigateur sur `http://127.0.0.1:5680/`, Claude pose la première question.
+→ ouvre l'UI sur `http://127.0.0.1:5680/` dans une fenêtre applicative Edge (`--app`, sans barre de navigateur, comme l'application Cartable ; repli sur le navigateur par défaut si Edge est absent), Claude pose la première question.
+
+### Depuis l'application Cartable (contenu droit)
+
+L'application Cartable (`C:\dev\Cartable`, double-clic sur `Cartable.vbs`) sait lancer une séance de révision directement : bouton Réviser global (ouvre cette GUI) ou puce « 🧠 Réviser » sur une séance de sa bibliothèque (ouvre la colle sur ce CM/TD via `compagnon.py <slug> <CM|TD> <n> full --source droit --autostart`, ou par URL profonde si le serveur tourne déjà).
 
 Arguments :
 - **matière** : `AN1`, `EN1`, `PSI`, `ISE`, `PRG2`

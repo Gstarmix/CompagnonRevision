@@ -131,6 +131,78 @@ def _fmt_time_until(iso_ts: Optional[str]) -> str:
     return f"Dans {minutes}min"
 
 
+# ============================================================ Thème Cartable
+
+# Palette partagée avec l'application Cartable et le front web du Compagnon
+# (harmonisation 2026-07-02, cf. CHANGELOG Phase S5) : nuit bleutée, accent
+# ambre. Un seul point d'application : ttk.Style (thème clam) + option
+# database pour les widgets classiques (Frame, LabelFrame, Listbox, Text).
+_THEME = {
+    "fond": "#0f1319",
+    "fond2": "#161c26",
+    "fond3": "#1d2532",
+    "bord": "#2a3442",
+    "texte": "#e8ecf2",
+    "texte2": "#9aa7b8",
+    "accent": "#e8b04b",
+    "accent_texte": "#1a1408",
+}
+
+
+def _apply_cartable_theme(root: Tk) -> None:
+    t = _THEME
+    root.configure(bg=t["fond"])
+    # Widgets classiques : valeurs par défaut via l'option database (ne vaut
+    # que pour les widgets créés APRÈS cet appel, d'où l'appel avant tout build).
+    root.option_add("*Background", t["fond"])
+    root.option_add("*Foreground", t["texte"])
+    root.option_add("*Labelframe.foreground", t["texte2"])
+    root.option_add("*Listbox.background", t["fond2"])
+    root.option_add("*Listbox.foreground", t["texte"])
+    root.option_add("*Listbox.selectBackground", t["accent"])
+    root.option_add("*Listbox.selectForeground", t["accent_texte"])
+    root.option_add("*Text.background", t["fond2"])
+    root.option_add("*Text.foreground", t["texte"])
+    root.option_add("*Text.insertBackground", t["texte"])
+    # Liste déroulante des Combobox (popdown en Tk classique).
+    root.option_add("*TCombobox*Listbox.background", t["fond2"])
+    root.option_add("*TCombobox*Listbox.foreground", t["texte"])
+    root.option_add("*TCombobox*Listbox.selectBackground", t["accent"])
+    root.option_add("*TCombobox*Listbox.selectForeground", t["accent_texte"])
+
+    style = ttk.Style(root)
+    style.theme_use("clam")
+    style.configure(
+        ".", background=t["fond"], foreground=t["texte"],
+        fieldbackground=t["fond2"], bordercolor=t["bord"],
+        lightcolor=t["fond2"], darkcolor=t["fond"], troughcolor=t["fond2"],
+        focuscolor=t["accent"], selectbackground=t["accent"],
+        selectforeground=t["accent_texte"],
+    )
+    style.configure("TLabelframe", bordercolor=t["bord"])
+    style.configure("TLabelframe.Label", foreground=t["texte2"])
+    style.configure("TButton", background=t["fond3"], padding=(8, 4))
+    style.map("TButton",
+              background=[("active", t["bord"]), ("disabled", t["fond2"])],
+              foreground=[("disabled", t["texte2"])])
+    style.map("TCheckbutton", background=[("active", t["fond"])])
+    style.map("TRadiobutton", background=[("active", t["fond"])])
+    style.configure("TEntry", insertcolor=t["texte"])
+    style.configure("TCombobox", background=t["fond3"], arrowcolor=t["texte"])
+    style.map("TCombobox",
+              fieldbackground=[("readonly", t["fond2"])],
+              foreground=[("disabled", t["texte2"])])
+    style.configure("TSpinbox", background=t["fond3"], arrowcolor=t["texte"],
+                    insertcolor=t["texte"])
+    style.configure("TNotebook.Tab", background=t["fond2"],
+                    foreground=t["texte2"], padding=(12, 5))
+    style.map("TNotebook.Tab",
+              background=[("selected", t["fond3"])],
+              foreground=[("selected", t["accent"])])
+    style.configure("TProgressbar", background=t["accent"],
+                    lightcolor=t["accent"], darkcolor=t["accent"])
+
+
 # ============================================================ App
 
 class CompagnonGUI:
@@ -146,6 +218,7 @@ class CompagnonGUI:
         # pour garantir 200+px à la console).
         self.root.geometry("1100x900")
         self.root.minsize(900, 800)
+        _apply_cartable_theme(self.root)
 
         self._proc: Optional[subprocess.Popen] = None
         self._proc_log_queue: queue.Queue[str] = queue.Queue()
@@ -761,7 +834,7 @@ class CompagnonGUI:
         # pour ne pas pousser Stop/Ouvrir UI hors fenêtre quand le texte
         # est long (« Aucun script ni slides généré pour ce CM »).
         row += 1
-        self.launch_hint = ttk.Label(f, text="", foreground="#a04040")
+        self.launch_hint = ttk.Label(f, text="", foreground="#e57373")
         self.launch_hint.grid(
             row=row, column=0, columnspan=4, sticky="w", pady=(2, 0),
         )
@@ -1868,7 +1941,7 @@ class CompagnonGUI:
     def _build_status_bar(self, parent) -> Frame:
         f = Frame(parent, relief="groove", borderwidth=1, padx=6, pady=4)
         self.status_var = StringVar(value="Prêt.")
-        ttk.Label(f, textvariable=self.status_var, foreground="#222").pack(side="left")
+        ttk.Label(f, textvariable=self.status_var, foreground="#9aa7b8").pack(side="left")
         return f
 
     # ------------------------------------------------------------ Actions launch / stop
@@ -2529,13 +2602,13 @@ class CompagnonGUI:
             self.btn_funnel.config(text="🌐 Public : passer en privé")
             txt = url or "(URL inconnue)"
             self.funnel_status_label.config(
-                text=f"⚠ exposé Internet : {txt}", foreground="#a04040",
+                text=f"⚠ exposé Internet : {txt}", foreground="#e57373",
             )
         elif state == "tailnet":
             self.btn_funnel.config(text="🔒 Privé tailnet : passer en public")
             txt = url or "(URL inconnue)"
             self.funnel_status_label.config(
-                text=f"tailnet only : {txt}", foreground="#3a8a3a",
+                text=f"tailnet only : {txt}", foreground="#6fca8f",
             )
         else:  # off
             self.btn_funnel.config(text="⚪ Coupé : activer privé tailnet")
@@ -2609,7 +2682,7 @@ class CompagnonGUI:
         self.btn_funnel.config(state="normal", text="❌ erreur")
         short_err = (err or "?").strip().splitlines()[0][:120]
         self.funnel_status_label.config(
-            text=f"{action} échouée : {short_err}", foreground="#a04040",
+            text=f"{action} échouée : {short_err}", foreground="#e57373",
         )
         self._log_local(f"❌ tailscale funnel: {action} échouée : {short_err}")
         # Refresh dans 5 s pour récupérer le vrai état

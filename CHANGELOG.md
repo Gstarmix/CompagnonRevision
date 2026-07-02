@@ -20,8 +20,9 @@ Deux changements, volontairement minimaux :
 
 1. **Palette `:root` de `style.css`** alignée sur celle de Cartable (`--bg #0f1319`, `--bg-elev #161c26`, `--fg #e8ecf2`, `--fg-dim #9aa7b8`, `--accent #e8b04b` ambre au lieu du bleu, `--student`/`--claude` adoucis dans les mêmes tons). Aucune des règles CSS n'est retouchée : seules les 9 variables changent, retour arrière trivial.
 2. **`compagnon.py` : `_open_ui(url)`** ouvre l'UI dans une fenêtre applicative Edge (`--app=`, sans barre de navigateur), comme Cartable. Repli sur `webbrowser.open` (comportement historique) si Edge est introuvable. Prompts, endpoints, logique de séance : intouchés.
+3. **GUI Tk (`gui.py`) thémée** (retour user : *« améliore l'interface du start_gui.vbs car il se dénote à Cartable »*) : nouvelle fonction `_apply_cartable_theme(root)` appelée juste après `Tk()`, avant tout build. `ttk.Style` sur base `clam` (palette complète : boutons, combos, spinbox, notebook, progressbars ambre) + option database pour les widgets classiques (LabelFrame, Listbox, ScrolledText, popdown des combos). Six couleurs codées en dur pensées pour fond clair ajustées (`#222` barre de statut, `#a04040` erreurs, `#3a8a3a` tailnet → équivalents lisibles sur fond sombre). Aucun widget déplacé, aucune logique touchée. Smoke test : thème appliqué sur fenêtre cachée avec un widget de chaque type, zéro erreur.
 
-Compile OK. Le rendu visuel des vues denses (cahier, surligneurs, chips) reste à vérifier à l'écran en vraie séance : les couleurs fonctionnelles (`--student`, `--claude`, violet/vert cahier) n'ont pas changé de rôle.
+Compile OK. Le rendu visuel des vues denses (cahier, surligneurs, chips web ; panneaux quota/console Tk) reste à vérifier à l'écran en vraie séance : les couleurs fonctionnelles (`--student`, `--claude`, violet/vert cahier) n'ont pas changé de rôle. README mis à jour (thème GUI, fenêtre Edge, section « Depuis l'application Cartable »).
 
 ---
 
