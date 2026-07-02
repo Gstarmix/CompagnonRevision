@@ -1,9 +1,19 @@
+"""
+test_app_ocr_photo.py : couverture endpoint POST /api/ocr_photo
+Phase v15.7.20 (OCR Gemini Flash 2.5 sur photo de pending_attachments).
+
+On mocke ClaudeClient pour ne pas appeler Gemini en réseau. Vérifie :
+validation entrée, attachment introuvable, attachment non-image, engine
+forcé Gemini Flash, parsing balise, réponse vide.
+"""
+
 import shutil
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = ROOT / "_scripts"
 for _p in (
@@ -16,6 +26,8 @@ for _p in (
 ):
     if _p not in sys.path:
         sys.path.insert(0, _p)
+
+
 def _make_fake_state_with_attachment(att_dict):
     fake = MagicMock()
     fake.lock = MagicMock()
@@ -23,31 +35,46 @@ def _make_fake_state_with_attachment(att_dict):
     fake.lock.__exit__ = MagicMock(return_value=False)
     fake.pending_attachments = [att_dict]
     return fake
+
+
 def _fake_client_returning(response_text):
+    """Fake ClaudeClient qui renvoie response_text."""
     fake = MagicMock()
     fake._history = []
     type(fake).history = property(lambda self_: list(self_._history))
+
     def _append(text):
         fake._history.append({"role": "user", "content": text})
-    def _stream(on_event):
+
+    def _stream(on_event):  # noqa: ARG001
         fake._history.append({"role": "assistant", "content": response_text})
+
     fake.append_user_message.side_effect = _append
     fake.stream_response.side_effect = _stream
     return fake
+
+
 class TestApiOcrPhoto(unittest.TestCase):
+
     def setUp(self):
         import app
         self.app_module = app
         self.client = app.app.test_client()
+        # Phase A.10.13.bug3 : l'endpoint /api/ocr_photo vérifie désormais
+        # `abs_path.is_file()` (cf. fix bug OCR hallucinant sur image
+        # introuvable). On crée un vrai fichier temp sous UPLOADS_DIR
+        # pour que le rel_path de test résolve à un fichier existant.
         self._tmpdir = Path(tempfile.mkdtemp(prefix="ocr_test_"))
         self._uploads_patcher = patch.object(app, "UPLOADS_DIR", self._tmpdir)
         self._uploads_patcher.start()
         target = self._tmpdir / "EN1/CC/photos/test.jpg"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(b"\xff\xd8\xff fake jpg bytes")
+
     def tearDown(self):
         self._uploads_patcher.stop()
         shutil.rmtree(self._tmpdir, ignore_errors=True)
+
     def _att(self, **overrides):
         d = {
             "id": "att_xyz999",
@@ -61,20 +88,24 @@ class TestApiOcrPhoto(unittest.TestCase):
         }
         d.update(overrides)
         return d
+
     def test_missing_attachment_id_returns_400(self):
         with patch.object(self.app_module, "_state", _make_fake_state_with_attachment(self._att())):
             r = self.client.post("/api/ocr_photo", json={})
         self.assertEqual(r.status_code, 400)
         self.assertIn("attachment_id", r.get_json()["error"])
+
     def test_no_active_session_returns_409(self):
         with patch.object(self.app_module, "_state", None):
             r = self.client.post("/api/ocr_photo", json={"attachment_id": "x"})
         self.assertEqual(r.status_code, 409)
+
     def test_unknown_attachment_returns_404(self):
         fake = _make_fake_state_with_attachment(self._att())
         with patch.object(self.app_module, "_state", fake):
             r = self.client.post("/api/ocr_photo", json={"attachment_id": "att_unknown"})
         self.assertEqual(r.status_code, 404)
+
     def test_non_image_attachment_returns_400(self):
         att = self._att(is_image=False)
         fake = _make_fake_state_with_attachment(att)
@@ -82,6 +113,7 @@ class TestApiOcrPhoto(unittest.TestCase):
             r = self.client.post("/api/ocr_photo", json={"attachment_id": "att_xyz999"})
         self.assertEqual(r.status_code, 400)
         self.assertIn("image", r.get_json()["error"].lower())
+
     def test_happy_path_returns_ocr_markdown(self):
         att = self._att()
         fake = _make_fake_state_with_attachment(att)
@@ -105,7 +137,10 @@ class TestApiOcrPhoto(unittest.TestCase):
         self.assertEqual(body["warnings"], ["colonne S vide"])
         self.assertEqual(body["model"], "gemini-2.5-flash")
         self.assertEqual(body["attachment_id"], "att_xyz999")
+
     def test_forces_gemini_flash_regardless_of_engine_pref(self):
+        """L'OCR doit toujours partir sur Gemini Flash, même si user
+        est sur cli_subscription / Anthropic / DeepSeek pour la séance."""
         att = self._att()
         fake_state = _make_fake_state_with_attachment(att)
         response = '<<<OCR>>>{"ocr_markdown": "x", "kind_detected": "autre", "completeness_pct": 100, "warnings": []}<<<END>>>'
@@ -117,6 +152,7 @@ class TestApiOcrPhoto(unittest.TestCase):
         kwargs = MockClient.call_args.kwargs
         self.assertEqual(kwargs.get("engine"), "gemini_api")
         self.assertEqual(kwargs.get("model"), "gemini-2.5-flash")
+
     def test_empty_ocr_markdown_returns_502(self):
         att = self._att()
         fake = _make_fake_state_with_attachment(att)
@@ -126,6 +162,7 @@ class TestApiOcrPhoto(unittest.TestCase):
             r = self.client.post("/api/ocr_photo", json={"attachment_id": "att_xyz999"})
         self.assertEqual(r.status_code, 502)
         self.assertEqual(r.get_json()["error"], "reponse_vide")
+
     def test_warnings_capped_at_10(self):
         att = self._att()
         fake = _make_fake_state_with_attachment(att)
@@ -142,5 +179,7 @@ class TestApiOcrPhoto(unittest.TestCase):
             r = self.client.post("/api/ocr_photo", json={"attachment_id": "att_xyz999"})
         self.assertEqual(r.status_code, 200)
         self.assertEqual(len(r.get_json()["warnings"]), 10)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

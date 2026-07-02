@@ -1,11 +1,41 @@
+# Compagnon_Revision : dépendances Python (Phase A.7.2)
+#
+# Installation : pip install -r requirements.txt
+# Pythn 3.12 recommandé (testé sur 3.12.x Windows 11).
+
+# Backend Flask + streaming SSE
 Flask>=3.0
 Werkzeug>=3.0
+
+# Transcription audio (mode vocal)
 faster-whisper>=1.0
 ffmpeg-python>=0.2
+
+# Engines IA
+# - Claude API (mode "api_anthropic"). Le mode "cli_subscription" utilise
+#   le binaire `claude` installé séparément (cf. README §Démarrage).
 anthropic>=0.40
+# - Gemini API (mode "gemini_api", Phase A.7.2 v7). Free tier sur
+#   https://aistudio.google.com/app/apikey. Nouveau SDK unifié 2025+.
 google-genai>=0.3
+# - DeepSeek (mode "deepseek_api", Phase A.7.2 v7.2) et Groq (mode
+#   "groq_api") : tous deux exposent une API OpenAI-compatible, donc on
+#   utilise le SDK openai standard avec base_url custom.
 openai>=1.30
+
+# TTS (Phase A.7.2 v14) : Microsoft Edge Read Aloud via API gratuite, pas
+# de clé requise, ~270 voix dont 4 françaises (Denise, Henri, Alain, Brigitte).
+# Utilisé par /api/tts/synthesize qui retourne un MP3 jouable côté front.
 edge-tts>=7.0
+
+# DSPy (Phase A.7.2 v15, Phase LT) : framework Stanford pour compiler des
+# prompts à partir de signatures input/output et d'un dataset. Cf.
+# _scripts/dialogue/dspy_compiler.py pour le PoC.
 dspy-ai>=2.5
-keyboard>=0.13
-sounddevice>=0.4
+
+# Rasterisation PDF → PNG (mode guidé). pdftoppm est un binaire de MiKTeX
+# côté système, pas un package Python, donc pas dans requirements.
+
+# Outils CLI internes
+keyboard>=0.13          # hotkey Espace global (legacy)
+sounddevice>=0.4         # capture audio (legacy)

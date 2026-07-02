@@ -1,23 +1,38 @@
+"""Undo des faux positifs : les cartes CAHIER qui sont en realite des OCR
+de photo du tuteur (preceded by `📸 Ce que je lis dans votre photo`).
+Detection : `<<<CAHIER>>>...<<<END>>>` precede des ~200 chars par un trigger
+OCR. Revert : restore depuis `text_history[]` la version sauvegardee, OU
+defaire le tag CAHIER en blockquote standard.
+"""
 import json
 import os
 import re
 import sys
 from pathlib import Path
+
 ROOT = Path(r'C:/Users/Gstar/OneDrive/Documents/BotGSTAR/Compagnon_Revision/_sessions')
+
 SESSIONS = [
     '2026-05-14_PRG2_TP8_exfull_decouverte_photos_strict_1.json',
     '2026-05-15_PRG2_TP9_exfull_decouverte_photos_strict_1.json',
     '2026-05-14_AN1_CCT_exfull_decouverte_photos_consultatif_1.json',
 ]
+
 OCR_HEADER_RE = re.compile(
     r'(📸|Ce que je lis dans (votre|ta) photo|Lecture de (votre|ta) photo)',
     re.IGNORECASE,
 )
 CAHIER_RE = re.compile(r'<<<CAHIER([^>]*)>>>([\s\S]*?)<<<END>>>')
+
+
 def _is_ocr_card(text, card_start):
+    """Le bloc CAHIER qui commence a `card_start` est-il un faux positif OCR ?
+    Heuristique : trigger OCR dans les 200 chars qui precedent."""
     window_start = max(0, card_start - 250)
     window = text[window_start:card_start]
     return bool(OCR_HEADER_RE.search(window))
+
+
 def _rebuild_transcript(d):
     msgs = d.get('messages') or {}
     transcript = d.get('transcript') or []
@@ -40,19 +55,30 @@ def _rebuild_transcript(d):
                     entry[k] = existing[k]
         new_transcript.append(entry)
     d['transcript'] = new_transcript
+
+
 def revert_message(text):
+    """Detecte les CAHIER OCR faux-positifs et les decapsule en blockquote.
+    Retourne (nouveau_texte, nb_reverts)."""
     reverts = [0]
+
     def replace(m):
         card_start = m.start()
         if _is_ocr_card(text, card_start):
+            # Restore en blockquote standard
             attrs, body = m.group(1), m.group(2)
+            # Strip les balises couleur eventuelles
             clean = re.sub(r'\{(?:bleu|rouge|vert|noir|hl-(?:jaune|vert|rose|violet))\}([\s\S]*?)\{/(?:bleu|rouge|vert|noir|hl-(?:jaune|vert|rose|violet))\}', r'\1', body)
+            # Ajoute prefixe `> ` sur chaque ligne
             quoted_lines = ['> ' + line for line in clean.strip().split('\n')]
             reverts[0] += 1
             return '\n'.join(quoted_lines)
         return m.group(0)
+
     new_text = CAHIER_RE.sub(replace, text)
     return new_text, reverts[0]
+
+
 def main():
     total = 0
     for sname in SESSIONS:
@@ -87,5 +113,7 @@ def main():
         print('  ' + sname[:55] + ' : ' + str(n_reverted) + ' OCR faux positifs revert')
     print()
     print('TOTAL :', total, 'cards OCR-faux-positif decapsulees.')
+
+
 if __name__ == '__main__':
     main()

@@ -1,8 +1,21 @@
+"""
+test_app_transcribe.py : couverture de l'endpoint POST /api/transcribe.
+
+On mocke ``WhisperTranscriber`` pour ne pas charger les 3 Go de modèle
+dans les tests. On vérifie le contrat : champ ``audio`` obligatoire,
+fichier vide refusé, succès retourne le texte du faux transcribeur.
+
+Lance avec :
+    python -m unittest tests.test_app_transcribe
+"""
+
 import io
 import sys
 import unittest
 from pathlib import Path
 from unittest.mock import patch
+
+# Path setup
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = ROOT / "_scripts"
 for _p in (
@@ -15,22 +28,31 @@ for _p in (
 ):
     if _p not in sys.path:
         sys.path.insert(0, _p)
+
+
 class _FakeTranscriber:
-    def transcribe(self, wav_path):
+    def transcribe(self, wav_path):  # noqa: ARG002
         return ("Bonjour, ceci est un test.", 1.42)
+
+
 class TestApiTranscribe(unittest.TestCase):
+
     def setUp(self):
+        # Reset le singleton transcriber entre tests pour isolation
         import app
         app._transcriber = None
         self.client = app.app.test_client()
+
     def tearDown(self):
         import app
         app._transcriber = None
+
     def test_missing_audio_field_returns_400(self):
         r = self.client.post("/api/transcribe", data={})
         self.assertEqual(r.status_code, 400)
         body = r.get_json()
         self.assertIn("audio", body.get("error", "").lower())
+
     def test_empty_filename_returns_400(self):
         r = self.client.post(
             "/api/transcribe",
@@ -38,6 +60,7 @@ class TestApiTranscribe(unittest.TestCase):
             content_type="multipart/form-data",
         )
         self.assertEqual(r.status_code, 400)
+
     def test_successful_transcription_returns_text(self):
         with patch("app._get_transcriber", return_value=_FakeTranscriber()):
             r = self.client.post(
@@ -49,6 +72,7 @@ class TestApiTranscribe(unittest.TestCase):
         body = r.get_json()
         self.assertEqual(body["text"], "Bonjour, ceci est un test.")
         self.assertAlmostEqual(body["duration_seconds"], 1.42, places=2)
+
     def test_whisper_load_failure_returns_500(self):
         def _raise():
             raise RuntimeError("CUDA OOM")
@@ -62,9 +86,10 @@ class TestApiTranscribe(unittest.TestCase):
         body = r.get_json()
         self.assertEqual(body["error"], "whisper_load_failed")
         self.assertIn("CUDA OOM", body["detail"])
+
     def test_transcribe_failure_returns_500(self):
         class FailTranscriber:
-            def transcribe(self, p):
+            def transcribe(self, p):  # noqa: ARG002
                 raise ValueError("decode error")
         with patch("app._get_transcriber", return_value=FailTranscriber()):
             r = self.client.post(
@@ -76,9 +101,10 @@ class TestApiTranscribe(unittest.TestCase):
         body = r.get_json()
         self.assertEqual(body["error"], "transcribe_failed")
         self.assertIn("decode error", body["detail"])
+
     def test_text_is_stripped(self):
         class WhitespaceTranscriber:
-            def transcribe(self, p):
+            def transcribe(self, p):  # noqa: ARG002
                 return ("   bonjour   ", 0.5)
         with patch("app._get_transcriber", return_value=WhitespaceTranscriber()):
             r = self.client.post(
@@ -88,5 +114,7 @@ class TestApiTranscribe(unittest.TestCase):
             )
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.get_json()["text"], "bonjour")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -1,8 +1,18 @@
+"""
+test_app_droit.py : Phase S4 (intégration Cartable), câblage de la source
+DROIT côté web : endpoint /api/droit_options, _build_session_context (branche
+droit) et _build_session_id (format droit).
+
+On patche ``app.CARTABLE_ROOT`` vers une arbo DROIT temporaire pour ne dépendre
+d'aucun contenu réel sur disque, et on ne démarre aucune vraie session Claude.
+"""
+
 import sys
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from unittest.mock import patch
+
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = ROOT / "_scripts"
 for _p in (
@@ -15,7 +25,10 @@ for _p in (
 ):
     if _p not in sys.path:
         sys.path.insert(0, _p)
+
+
 def _make_droit_arbo(root: Path) -> None:
+    """Crée une arbo DROIT minimale : 1 matière (CM3 + fiche) + 1 méthodo."""
     cm = root / "droit-personnes" / "CM"
     (cm / "transcriptions").mkdir(parents=True)
     (cm / "fiches").mkdir(parents=True)
@@ -30,7 +43,10 @@ def _make_droit_arbo(root: Path) -> None:
     (methodo / "methodo_dissertation.md").write_text(
         "# Méthodo dissertation", encoding="utf-8"
     )
+
+
 class TestDroitOptionsEndpoint(unittest.TestCase):
+
     def setUp(self):
         import app
         self.app_module = app
@@ -38,8 +54,10 @@ class TestDroitOptionsEndpoint(unittest.TestCase):
         self._tmpobj = TemporaryDirectory()
         self.droit_root = Path(self._tmpobj.name)
         _make_droit_arbo(self.droit_root)
+
     def tearDown(self):
         self._tmpobj.cleanup()
+
     def test_lists_matieres(self):
         with patch.object(self.app_module, "CARTABLE_ROOT", self.droit_root):
             r = self.client.get("/api/droit_options")
@@ -48,6 +66,7 @@ class TestDroitOptionsEndpoint(unittest.TestCase):
         self.assertIn("droit-personnes", out["matieres"])
         self.assertEqual(out["types"], [])
         self.assertEqual(out["nums"], [])
+
     def test_cascade_types_then_nums(self):
         with patch.object(self.app_module, "CARTABLE_ROOT", self.droit_root):
             r = self.client.get("/api/droit_options?matiere=droit-personnes")
@@ -56,15 +75,20 @@ class TestDroitOptionsEndpoint(unittest.TestCase):
                 "/api/droit_options?matiere=droit-personnes&type=CM"
             )
         self.assertEqual(r2.get_json()["nums"], ["3"])
+
+
 class TestBuildSessionContextDroit(unittest.TestCase):
+
     def setUp(self):
         import app
         self.app_module = app
         self._tmpobj = TemporaryDirectory()
         self.droit_root = Path(self._tmpobj.name)
         _make_droit_arbo(self.droit_root)
+
     def tearDown(self):
         self._tmpobj.cleanup()
+
     def test_droit_context_resolves_transcription_and_fiche(self):
         body = {
             "source": "droit",
@@ -84,9 +108,13 @@ class TestBuildSessionContextDroit(unittest.TestCase):
         self.assertTrue(any(
             p.name == "methodo_dissertation.md" for p in ctx.droit_methodo_paths
         ))
+        # Aucun matériel COURS.
         self.assertIsNone(ctx.enonce_path)
         self.assertEqual(ctx.correction_paths, [])
+
+
 class TestBuildSessionIdDroit(unittest.TestCase):
+
     def test_droit_session_id_format(self):
         import app
         from prompt_builder import SessionContext
@@ -101,5 +129,7 @@ class TestBuildSessionIdDroit(unittest.TestCase):
             sid.endswith("_DROIT_droit-personnes_CM3_full_colle_mixte_aucun"),
             sid,
         )
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

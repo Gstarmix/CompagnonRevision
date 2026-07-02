@@ -1,25 +1,38 @@
+# Données runtime : jamais commit
 _sessions/
 _secrets/
 _logs/
 _cache/
 _photos_inbox/
+# Phase A.8 : PDFs d'énoncés inventés par le tuteur Découverte
 _generated/
+# Phase A.8.1 : archives .md des séances (sous-dossiers par matière)
 _archives/
+# Phase A.10.2 : uploads de pièces jointes envoyées au tuteur en séance
+# (photos / PDF / Excel). Sous-arborescence par session_id.
 _uploads/
+
+# Prompts = sauce secrète (doc 04) : jamais en public
 _prompts/
 _prompts_claude_ai/
 _prompts_claude_cowork/
 *PROMPT*.md
 *PROMPT*.txt
+
+# Interne / non destiné au public (roadmap, accès distant, facturation)
 _PORTAGE_ABOEKA/
 _remote_access/
 CONTEXTE_FACTURATION_GEMINI.md
+
+# Secrets supplémentaires
 .env
 .env.*
 *cookies*.txt
 *.token
 *.key
 *.pem
+
+# Python
 __pycache__/
 *.pyc
 *.pyo

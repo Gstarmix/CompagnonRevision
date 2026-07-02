@@ -7,7 +7,9 @@
   <meta name="robots" content="noindex, nofollow, noarchive">
   <meta name="referrer" content="no-referrer">
   <title>📷 Compagnon : Mobile</title>
-
+  <!-- Phase v15.7.10 : Cropper.js vendoré pour rognage des photos avant
+       upload. Même UX que le desktop : bouton ✂ par upload, modal de
+       crop, blob renvoyé via /api/pending_attachments/<id>/replace. -->
   <link rel="stylesheet" href="/static/vendor/cropperjs/cropper.min.css">
   <script defer src="/static/vendor/cropperjs/cropper.min.js"></script>
   <style>
@@ -238,7 +240,10 @@
       retirer une par une via 🗑.
     </div>
   </main>
-
+  <!-- Phase v15.7.22 : Modal de PRÉ-PREVIEW avant upload (alignement
+       UX Clipboard_Relay v0.1.5). Ouverte automatiquement quand l'user
+       prend une photo via captureInput, avant le push vers backend.
+       Permet crop + rotate + "Envoyer tel quel" + Annuler. -->
   <div id="crop-preview-modal-m" hidden>
     <div class="crop-header-m">
       <h3>📷 Préparer la photo</h3>
@@ -259,6 +264,7 @@
     </div>
   </div>
 
+  <!-- Phase v15.7.10 : Modal de rognage (Cropper.js) plein écran -->
   <div id="crop-modal" hidden>
     <div class="crop-header-m">
       <h3>✂ Rogner la photo</h3>
@@ -267,7 +273,8 @@
     <div class="crop-body-m">
       <img id="crop-img-m" alt="Image à rogner">
     </div>
-
+    <!-- Phase v15.7.16 : boutons rotation pour photos prises de travers
+         (téléphone tenu en biais, EXIF faux). 90° par clic, 2 sens. -->
     <div class="crop-rotate-row-m">
       <button type="button" id="crop-rotate-left-m" class="crop-btn-secondary-m" title="Pivoter à gauche">↺ 90°</button>
       <button type="button" id="crop-rotate-right-m" class="crop-btn-secondary-m" title="Pivoter à droite">↻ 90°</button>

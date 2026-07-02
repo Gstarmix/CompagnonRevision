@@ -1,7 +1,15 @@
+"""
+test_app_session_photos.py : couverture endpoints Phase A.9.1
+(GET / DELETE /api/session_photos).
+
+Vérifie : listing, delete, role default, pas de session, idempotence.
+"""
+
 import sys
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = ROOT / "_scripts"
 for _p in (
@@ -14,22 +22,32 @@ for _p in (
 ):
     if _p not in sys.path:
         sys.path.insert(0, _p)
+
+
 def _make_fake_state(initial_photos=None):
+    """Fake CompanionSession avec session_state.data['session_photos']."""
     fake = MagicMock()
     fake.lock = MagicMock()
     fake.lock.__enter__ = MagicMock(return_value=None)
     fake.lock.__exit__ = MagicMock(return_value=False)
     fake.session_state = MagicMock()
     fake.session_state.data = {"session_photos": list(initial_photos or [])}
+
     def _set_meta(key, value):
         fake.session_state.data[key] = value
     fake.session_state.set_meta.side_effect = _set_meta
     return fake
+
+
 class TestApiSessionPhotos(unittest.TestCase):
+
     def setUp(self):
         import app
         self.app_module = app
         self.client = app.app.test_client()
+
+    # ============ GET ============
+
     def test_get_no_session(self):
         with patch.object(self.app_module, "_state", None):
             r = self.client.get("/api/session_photos")
@@ -37,6 +55,7 @@ class TestApiSessionPhotos(unittest.TestCase):
         body = r.get_json()
         self.assertEqual(body["photos"], [])
         self.assertFalse(body["active"])
+
     def test_get_returns_existing(self):
         photos = [
             {
@@ -55,6 +74,7 @@ class TestApiSessionPhotos(unittest.TestCase):
         self.assertTrue(body["active"])
         self.assertEqual(len(body["photos"]), 2)
         self.assertEqual(body["photos"][0]["id"], "att_aaa")
+
     def test_get_empty_when_no_photos(self):
         with patch.object(self.app_module, "_state", _make_fake_state([])):
             r = self.client.get("/api/session_photos")
@@ -62,15 +82,20 @@ class TestApiSessionPhotos(unittest.TestCase):
         body = r.get_json()
         self.assertTrue(body["active"])
         self.assertEqual(body["photos"], [])
+
+    # ============ DELETE ============
+
     def test_delete_no_session(self):
         with patch.object(self.app_module, "_state", None):
             r = self.client.delete("/api/session_photos/att_xyz")
         self.assertEqual(r.status_code, 409)
+
     def test_delete_unknown(self):
         photos = [{"id": "att_a", "rel_path": "x.jpg", "filename": "x.jpg"}]
         with patch.object(self.app_module, "_state", _make_fake_state(photos)):
             r = self.client.delete("/api/session_photos/att_unknown")
         self.assertEqual(r.status_code, 404)
+
     def test_delete_existing(self):
         photos = [
             {"id": "att_a", "rel_path": "x.jpg", "filename": "x.jpg"},
@@ -83,7 +108,9 @@ class TestApiSessionPhotos(unittest.TestCase):
         remaining = fake.session_state.data["session_photos"]
         self.assertEqual(len(remaining), 1)
         self.assertEqual(remaining[0]["id"], "att_a")
+
     def test_delete_idempotent_after_success(self):
+        """Suppression deux fois de suite : 1ère OK (204), 2ème 404."""
         photos = [{"id": "att_a", "rel_path": "x.jpg", "filename": "x.jpg"}]
         fake = _make_fake_state(photos)
         with patch.object(self.app_module, "_state", fake):
@@ -92,9 +119,17 @@ class TestApiSessionPhotos(unittest.TestCase):
         self.assertEqual(r1.status_code, 204)
         self.assertEqual(r2.status_code, 404)
         self.assertEqual(fake.session_state.data["session_photos"], [])
-import tempfile
+
+
+# Phase A.10.1 : backfill depuis transcript pour les sessions antérieures
+# à A.9.1 (qui n'ont pas le champ session_photos).
+
+import tempfile  # noqa: E402
+
+
 def _make_fake_state_with_transcript(transcript, photos=None,
                                      backfilled=False):
+    """Variante avec transcript pour tester le backfill."""
     fake = MagicMock()
     fake.lock = MagicMock()
     fake.lock.__enter__ = MagicMock(return_value=None)
@@ -108,16 +143,22 @@ def _make_fake_state_with_transcript(transcript, photos=None,
     if backfilled:
         data["session_photos_backfilled"] = True
     fake.session_state.data = data
+
     def _set_meta(key, value):
         fake.session_state.data[key] = value
     fake.session_state.set_meta.side_effect = _set_meta
     return fake
+
+
 class TestBackfillSessionPhotos(unittest.TestCase):
+
     def setUp(self):
         import app
         self.app_module = app
         self.client = app.app.test_client()
+
     def test_no_backfill_when_marker_set(self):
+        """Le marker session_photos_backfilled=True empêche tout scan."""
         transcript = [
             {"role": "student", "text": "![p](AN1/TD/TD5/photos/p.jpg)",
              "at": "2026-05-10T10:00:00"},
@@ -125,8 +166,13 @@ class TestBackfillSessionPhotos(unittest.TestCase):
         fake = _make_fake_state_with_transcript(transcript, backfilled=True)
         with patch.object(self.app_module, "_state", fake):
             r = self.client.get("/api/session_photos")
+        # Aucun scan : la liste reste vide même si le transcript a une image
         self.assertEqual(r.get_json()["photos"], [])
+        # Pas de set_meta appelé (autre que potentiellement le marker init)
+        # Le marker est déjà True donc rien à faire.
+
     def test_no_backfill_when_session_photos_already_populated(self):
+        """Si session_photos est déjà non-vide, on pose juste le marker."""
         photos = [{"id": "att_a", "rel_path": "x.jpg", "filename": "x.jpg"}]
         transcript = [
             {"role": "student", "text": "![y](AN1/TD/TD5/photos/y.jpg)",
@@ -135,11 +181,16 @@ class TestBackfillSessionPhotos(unittest.TestCase):
         fake = _make_fake_state_with_transcript(transcript, photos=photos)
         with patch.object(self.app_module, "_state", fake):
             r = self.client.get("/api/session_photos")
+        # La liste retournée est l'existante, pas les photos du transcript
         out = r.get_json()["photos"]
         self.assertEqual(len(out), 1)
         self.assertEqual(out[0]["id"], "att_a")
+        # Marker posé
         self.assertTrue(fake.session_state.data.get("session_photos_backfilled"))
+
     def test_backfill_from_transcript_with_real_files(self):
+        """Backfill scanne le transcript et reconstitue depuis les fichiers
+        existants sur disque."""
         with tempfile.TemporaryDirectory() as td:
             cours_root = Path(td)
             photo_dir = cours_root / "AN1" / "TD" / "TD5" / "photos"
@@ -167,15 +218,21 @@ class TestBackfillSessionPhotos(unittest.TestCase):
                 "AN1/TD/TD5/photos/p1.jpg",
                 "AN1/TD/TD5/photos/p2.png",
             })
+            # Tous backfilled
             for p in out:
                 self.assertTrue(p.get("backfilled"))
                 self.assertTrue(p["id"].startswith("photo_"))
                 self.assertGreater(p["size_bytes"], 0)
+            # MIME corrects
             mimes = {p["filename"]: p["mime"] for p in out}
             self.assertEqual(mimes["p1.jpg"], "image/jpeg")
             self.assertEqual(mimes["p2.png"], "image/png")
+            # Marker posé
             self.assertTrue(fake.session_state.data["session_photos_backfilled"])
+
     def test_backfill_skips_missing_files(self):
+        """Si une image markdown référence un fichier qui n'existe plus
+        sur disque, elle est skippée sans erreur."""
         with tempfile.TemporaryDirectory() as td:
             cours_root = Path(td)
             transcript = [
@@ -188,8 +245,11 @@ class TestBackfillSessionPhotos(unittest.TestCase):
                 with patch.object(self.app_module, "_state", fake):
                     r = self.client.get("/api/session_photos")
             self.assertEqual(r.get_json()["photos"], [])
+            # Marker quand même posé (one-shot)
             self.assertTrue(fake.session_state.data["session_photos_backfilled"])
+
     def test_backfill_dedup_same_path(self):
+        """Si la même image est envoyée plusieurs fois, une seule entrée."""
         with tempfile.TemporaryDirectory() as td:
             cours_root = Path(td)
             photo_dir = cours_root / "AN1" / "TD" / "TD5" / "photos"
@@ -208,7 +268,9 @@ class TestBackfillSessionPhotos(unittest.TestCase):
                 with patch.object(self.app_module, "_state", fake):
                     r = self.client.get("/api/session_photos")
             self.assertEqual(len(r.get_json()["photos"]), 1)
+
     def test_backfill_skips_external_urls(self):
+        """URLs http(s) et chemins absolus ne sont pas backfillés."""
         with tempfile.TemporaryDirectory() as td:
             cours_root = Path(td)
             transcript = [
@@ -223,7 +285,11 @@ class TestBackfillSessionPhotos(unittest.TestCase):
                 with patch.object(self.app_module, "_state", fake):
                     r = self.client.get("/api/session_photos")
             self.assertEqual(r.get_json()["photos"], [])
+
     def test_backfill_skips_claude_bubbles(self):
+        """Les images dans les bulles claude ne sont pas backfillées (le
+        tuteur peut citer une image mais elle n'a pas été envoyée par
+        l'étudiant)."""
         with tempfile.TemporaryDirectory() as td:
             cours_root = Path(td)
             photo_dir = cours_root / "AN1" / "TD" / "TD5" / "photos"
@@ -239,7 +305,10 @@ class TestBackfillSessionPhotos(unittest.TestCase):
                 with patch.object(self.app_module, "_state", fake):
                     r = self.client.get("/api/session_photos")
             self.assertEqual(r.get_json()["photos"], [])
+
     def test_backfill_marker_persists_empty_result(self):
+        """Même si backfill ne trouve rien (transcript vide ou pas
+        d'image), le marker est posé pour éviter re-scan à chaque GET."""
         transcript = [
             {"role": "student", "text": "Juste du texte",
              "at": "2026-05-10"},
@@ -249,5 +318,7 @@ class TestBackfillSessionPhotos(unittest.TestCase):
             self.client.get("/api/session_photos")
         self.assertTrue(fake.session_state.data["session_photos_backfilled"])
         self.assertEqual(fake.session_state.data["session_photos"], [])
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

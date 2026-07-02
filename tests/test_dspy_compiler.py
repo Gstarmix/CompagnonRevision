@@ -1,25 +1,47 @@
+"""
+test_dspy_compiler.py : couvre la structure DSPy (Phase A.7.2 v15, LT).
+
+Pas d'appels LM réels. Vérifie que les signatures sont bien définies,
+que le dataset a la bonne forme, que la metric retourne des scores 0-1
+cohérents, et que le module GuidedTutor est instanciable.
+
+Lance :
+    python -m unittest tests.test_dspy_compiler
+"""
 from __future__ import annotations
+
 import sys
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock
+
 ROOT = Path(__file__).resolve().parent.parent
 DIALOGUE_DIR = ROOT / "_scripts" / "dialogue"
 for _p in (str(ROOT), str(DIALOGUE_DIR)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
+
+
 class TestDSPyImportable(unittest.TestCase):
+    """DSPy doit être installable et importable. Si ça fail, pip install
+    dspy-ai n'a pas marché."""
+
     def test_dspy_imports(self):
         import dspy
         self.assertTrue(hasattr(dspy, "Signature"))
         self.assertTrue(hasattr(dspy, "Predict"))
         self.assertTrue(hasattr(dspy, "Example"))
+
+
 class TestSignatures(unittest.TestCase):
+
     def test_respond_to_slide_meta_has_required_fields(self):
         from dspy_compiler import RespondToSlideMeta
+        # DSPy 3.x utilise Pydantic v2 : les fields sont dans model_fields.
         fields = set(RespondToSlideMeta.model_fields.keys())
         for f in ("slide_index", "slide_total", "slide_title", "response"):
             self.assertIn(f, fields, f"Field {f} manquant dans RespondToSlideMeta")
+
     def test_respond_to_student_reading_has_required_fields(self):
         from dspy_compiler import RespondToStudentReading
         fields = set(RespondToStudentReading.model_fields.keys())
@@ -28,11 +50,15 @@ class TestSignatures(unittest.TestCase):
             "response", "should_advance",
         ):
             self.assertIn(f, fields, f"Field {f} manquant dans RespondToStudentReading")
+
+
 class TestDataset(unittest.TestCase):
+
     def test_meta_arrival_examples_have_5_entries(self):
         from dspy_compiler import get_meta_arrival_examples
         examples = get_meta_arrival_examples()
         self.assertEqual(len(examples), 5)
+
     def test_meta_arrival_examples_responses_are_short(self):
         from dspy_compiler import get_meta_arrival_examples
         for ex in get_meta_arrival_examples():
@@ -40,13 +66,18 @@ class TestDataset(unittest.TestCase):
                 len(ex.response.split()), 10,
                 "Réponses canoniques meta doivent être ≤ 10 mots (concision)",
             )
+
     def test_reading_examples_mixed_advance_decisions(self):
         from dspy_compiler import get_reading_examples
         examples = get_reading_examples()
         self.assertGreaterEqual(len(examples), 3)
+        # Au moins un avance et un n'avance pas (couverture des 2 cas)
         decisions = {ex.should_advance for ex in examples}
         self.assertEqual(decisions, {True, False})
+
+
 class TestMetric(unittest.TestCase):
+
     def test_clean_response_scores_high(self):
         from dspy_compiler import tutor_response_metric, get_meta_arrival_examples
         ex = get_meta_arrival_examples()[0]
@@ -54,6 +85,7 @@ class TestMetric(unittest.TestCase):
         prediction.response = "Allez-y, lisez."
         score = tutor_response_metric(ex, prediction)
         self.assertEqual(score, 1.0)
+
     def test_response_with_role_hijack_loses_points(self):
         from dspy_compiler import tutor_response_metric, get_meta_arrival_examples
         ex = get_meta_arrival_examples()[0]
@@ -63,7 +95,8 @@ class TestMetric(unittest.TestCase):
         )
         score = tutor_response_metric(ex, prediction)
         self.assertLess(score, 1.0)
-        self.assertGreaterEqual(score, 0.5)
+        self.assertGreaterEqual(score, 0.5)  # autres critères passent
+
     def test_response_with_recited_rule_loses_points(self):
         from dspy_compiler import tutor_response_metric, get_meta_arrival_examples
         ex = get_meta_arrival_examples()[0]
@@ -73,13 +106,15 @@ class TestMetric(unittest.TestCase):
         )
         score = tutor_response_metric(ex, prediction)
         self.assertLess(score, 1.0)
+
     def test_response_too_long_loses_points(self):
         from dspy_compiler import tutor_response_metric, get_meta_arrival_examples
         ex = get_meta_arrival_examples()[0]
         prediction = MagicMock()
-        prediction.response = " ".join(["mot"] * 200)
+        prediction.response = " ".join(["mot"] * 200)  # 200 mots
         score = tutor_response_metric(ex, prediction)
         self.assertLess(score, 1.0)
+
     def test_score_bounded_0_to_1(self):
         from dspy_compiler import tutor_response_metric, get_meta_arrival_examples
         ex = get_meta_arrival_examples()[0]
@@ -94,15 +129,21 @@ class TestMetric(unittest.TestCase):
             score = tutor_response_metric(ex, prediction)
             self.assertGreaterEqual(score, 0.0)
             self.assertLessEqual(score, 1.0)
+
+
 class TestGuidedTutorModule(unittest.TestCase):
+
     def test_instantiable_without_lm(self):
         from dspy_compiler import GuidedTutor
         tutor = GuidedTutor()
         self.assertIsNotNone(tutor.respond_to_meta)
         self.assertIsNotNone(tutor.respond_to_reading)
+
     def test_compile_without_lm_raises(self):
         from dspy_compiler import compile_guided_tutor
         with self.assertRaises(RuntimeError):
             compile_guided_tutor(lm=None)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,10 +1,24 @@
+' start_gui.vbs : lanceur silencieux de la GUI Compagnon (Tkinter).
+'
+' Double-clic pour ouvrir la fenêtre Tk sans console derrière. Préfère
+' pythonw.exe (pas de fenêtre cmd qui s'ouvre) ; fallback sur python.exe
+' si introuvable.
+'
+' Pattern calqué sur Arsenal_Arguments\start_summarize_gui.vbs.
+
 Option Explicit
+
 Dim Shell, FSO, Here, ScriptPath, PythonW, Cmd
 Set Shell = CreateObject("WScript.Shell")
 Set FSO = CreateObject("Scripting.FileSystemObject")
+
 Here = FSO.GetParentFolderName(WScript.ScriptFullName)
 ScriptPath = FSO.BuildPath(Here, "gui.py")
+
+' 1. PATH (cherche pythonw.exe directement)
 PythonW = "pythonw.exe"
+
+' 2. Fallback : chemins courants Python 3.12 user-local
 If Not InPath(PythonW) Then
     Dim Candidates(2), i
     Candidates(0) = Shell.ExpandEnvironmentStrings("%LOCALAPPDATA%\Programs\Python\Python312\pythonw.exe")
@@ -17,12 +31,16 @@ If Not InPath(PythonW) Then
         End If
     Next
 End If
+
+' 3. Dernière chance : python.exe (ouvrira une console parasite mais marchera)
 If Not InPath(PythonW) And Not FSO.FileExists(PythonW) Then
     PythonW = "python.exe"
 End If
+
 Cmd = """" & PythonW & """ """ & ScriptPath & """"
 Shell.CurrentDirectory = Here
-Shell.Run Cmd, 0, False
+Shell.Run Cmd, 0, False  ' 0 = pas de fenêtre, False = ne pas attendre
+
 Function InPath(exeName)
     On Error Resume Next
     Dim out

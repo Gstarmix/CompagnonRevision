@@ -1,45 +1,124 @@
+"""fs_tools.py : outils filesystem réels pour les moteurs API (Phase A.12).
+
+Contexte du bug corrigé
+-----------------------
+Les modes ``workspace`` / ``guidé`` / ``découverte`` promettent au tuteur un
+accès ``Read`` / ``Grep`` / ``Glob`` au dossier de travail. Jusqu'ici ces
+outils n'étaient câblés QUE pour le moteur ``cli_subscription`` (la CLI Claude
+Code les fournit nativement via subprocess). Sur ``gemini_api`` / ``api_anthropic``
+/ ``deepseek_api`` / ``groq_api`` aucun canal d'outil n'existait : le prompt
+ordonnait au modèle de « lire le fichier avant d'affirmer », le modèle n'avait
+aucun moyen de le faire réellement, donc il **confabulait** le contenu (cf.
+session ``2026-05-21_WORKSPACE_tp-recherche-docu``, sujet de TP entièrement
+halluciné).
+
+Ce module fournit :
+
+- Les **schémas** des 3 outils (``Read`` / ``Grep`` / ``Glob``) dans les trois
+  formats de tool-calling : Gemini, Anthropic, OpenAI-compatible.
+- Un **exécuteur** (``execute_fs_tool``) qui réalise l'opération réelle sur le
+  disque, scopée à une racine, en lecture seule, avec garde-fous secrets.
+
+Le câblage de la boucle agentique (round-trips appel d'outil → résultat →
+relance) est dans ``claude_client.py``.
+
+Garde-fous (cf. PROMPT_SYSTEME_WORKSPACE §4.2) :
+- toute opération est scopée à ``root`` ; rejet du ``..`` et des chemins
+  absolus qui sortent de la racine ;
+- refus de lire les fichiers/dossiers sensibles (``_secrets/``, ``.env``,
+  ``*.key``, ``.git/``, ``node_modules/``, venv…) ;
+- lecture seule : aucun outil d'écriture n'est exposé.
+"""
 from __future__ import annotations
+
 import json
 import logging
 import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
+
 logger = logging.getLogger(__name__)
+
+# ============================================================ Constantes
+
+#: Noms canoniques des 3 outils. Repris tels quels par les schémas (le prompt
+#: WORKSPACE/GUIDE/DECOUVERTE parle déjà de « Read / Grep / Glob »).
 FS_TOOL_NAMES: tuple[str, ...] = ("Read", "Grep", "Glob")
+
+#: Nombre maximum de round-trips d'outils dans un seul ``stream_response``.
+#: Au-delà, on force une réponse texte (cf. claude_client). 6 = large pour
+#: une exploration de dossier (lister → lire 3-4 fichiers → répondre).
 MAX_TOOL_ROUNDS = 6
+
+#: Cap de caractères renvoyés par un ``Read`` texte (protège le budget tokens).
 _READ_MAX_CHARS = 60_000
+#: Cap de correspondances renvoyées par un ``Grep``.
 _GREP_MAX = 200
+#: Cap de fichiers scannés par un ``Grep`` (évite l'explosion sur gros repos).
 _GREP_MAX_FILES = 3000
+#: Cap de chemins renvoyés par un ``Glob``.
 _GLOB_MAX = 400
+#: Taille max d'un fichier binaire (PDF/image) renvoyé en ingestion native.
 _DOC_MAX_BYTES = 10 * 1024 * 1024
+#: Taille max d'un fichier scanné par Grep (au-delà : skip).
 _GREP_FILE_MAX_BYTES = 2 * 1024 * 1024
+
+#: Extensions image → media_type (ingestion native côté Gemini / Anthropic).
 _IMAGE_EXTS: dict[str, str] = {
     ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png",
     ".gif": "image/gif", ".webp": "image/webp",
 }
+
+#: Dossiers jamais traversés (bruit + sensibles).
 _SKIP_DIRS = frozenset({
     ".git", "node_modules", "venv", ".venv", "__pycache__", "_secrets",
     ".idea", ".vscode", "dist", "build", ".pytest_cache", ".mypy_cache",
     ".next", ".cache", "site-packages",
 })
+
+#: Sous-chaînes qui rendent un nom de fichier sensible (refus de lecture).
 _SENSITIVE_SUBSTR = ("secret", "password", "token", "api_key", "apikey",
                      "credential")
+#: Extensions sensibles (clés, certificats).
 _SENSITIVE_EXT = frozenset({".key", ".pem", ".env"})
+
+#: Extensions binaires non lisibles en texte (skip Grep, refus Read texte).
 _BINARY_EXTS = frozenset({
     ".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".ico",
     ".zip", ".gz", ".tar", ".7z", ".rar", ".exe", ".dll", ".so", ".dylib",
     ".pyc", ".pyo", ".mp3", ".mp4", ".wav", ".m4a", ".avi", ".mov",
     ".bin", ".lock", ".woff", ".woff2", ".ttf", ".otf", ".eot",
 })
+
+
+# ============================================================ Résultat
+
 @dataclass
 class FsToolResult:
+    """Résultat d'un appel d'outil FS.
+
+    - ``text`` : payload textuel renvoyé au modèle (toujours présent ; en cas
+      d'erreur, contient le message d'erreur lisible).
+    - ``document`` : présent quand ``Read`` cible un PDF ou une image. Le
+      câblage moteur l'attache au tour conversationnel en ingestion native
+      (``inline_data`` Gemini / ``document`` block Anthropic). Forme :
+      ``{"media_type": str, "data": bytes, "label": str}``.
+    """
     tool: str
     ok: bool
     text: str
     document: Optional[dict] = None
+
+
 class FsToolError(Exception):
-    pass
+    """Erreur d'exécution d'un outil FS (chemin invalide, fichier absent…)."""
+
+
+# ============================================================ Schémas
+
+#: Schéma neutre (JSON-Schema lowercase) des 3 outils. Les générateurs
+#: par moteur dérivent mécaniquement de cette source unique.
 _NEUTRAL: dict[str, dict[str, Any]] = {
     "Read": {
         "description": (
@@ -132,7 +211,15 @@ _NEUTRAL: dict[str, dict[str, Any]] = {
         },
     },
 }
+
+
 def _uppercase_types(node: Any) -> Any:
+    """Copie récursive d'un schéma JSON en passant les ``type`` en MAJUSCULES.
+
+    Gemini attend l'enum ``Type`` (``OBJECT``/``STRING``/``INTEGER``/…) ; la
+    coercition pydantic du SDK matche par valeur exacte (uppercase). On part
+    du schéma neutre lowercase et on uppercase pour le format Gemini.
+    """
     if isinstance(node, dict):
         out = {}
         for k, v in node.items():
@@ -144,7 +231,10 @@ def _uppercase_types(node: Any) -> Any:
     if isinstance(node, list):
         return [_uppercase_types(x) for x in node]
     return node
+
+
 def gemini_fs_declarations() -> list[dict[str, Any]]:
+    """Schémas des 3 outils FS au format Gemini (function declarations)."""
     return [
         {
             "name": name,
@@ -153,7 +243,10 @@ def gemini_fs_declarations() -> list[dict[str, Any]]:
         }
         for name, spec in _NEUTRAL.items()
     ]
+
+
 def anthropic_fs_tools() -> list[dict[str, Any]]:
+    """Schémas des 3 outils FS au format Anthropic (``input_schema``)."""
     return [
         {
             "name": name,
@@ -162,7 +255,10 @@ def anthropic_fs_tools() -> list[dict[str, Any]]:
         }
         for name, spec in _NEUTRAL.items()
     ]
+
+
 def openai_fs_tools() -> list[dict[str, Any]]:
+    """Schémas des 3 outils FS au format OpenAI-compatible (DeepSeek/Groq)."""
     return [
         {
             "type": "function",
@@ -174,26 +270,41 @@ def openai_fs_tools() -> list[dict[str, Any]]:
         }
         for name, spec in _NEUTRAL.items()
     ]
+
+
+# ============================================================ Sécurité
+
 def _resolve(root: Path, rel: str) -> Path:
+    """Résout un chemin sous ``root``. Lève si le résultat sort de la racine."""
     root = root.resolve()
     p = Path(rel)
     cand = (p if p.is_absolute() else root / p).resolve()
     if cand != root and root not in cand.parents:
         raise FsToolError(f"chemin hors du dossier de travail : {rel}")
     return cand
+
+
 def _in_skipped_dir(path: Path, root: Path) -> bool:
+    """True si ``path`` traverse un dossier de ``_SKIP_DIRS``."""
     try:
         rel = path.resolve().relative_to(root.resolve())
     except ValueError:
         return True
     return any(part in _SKIP_DIRS for part in rel.parts)
+
+
 def _is_sensitive(path: Path) -> bool:
+    """True si le fichier est sensible (secret, clé, credential)."""
     name = path.name.lower()
     if name == ".env" or name.endswith(".env"):
         return True
     if path.suffix.lower() in _SENSITIVE_EXT:
         return True
     return any(s in name for s in _SENSITIVE_SUBSTR)
+
+
+# ============================================================ Exécution
+
 def _do_read(root: Path, args: dict) -> FsToolResult:
     rel = (args.get("path") or args.get("file_path") or "").strip()
     if not rel:
@@ -207,8 +318,11 @@ def _do_read(root: Path, args: dict) -> FsToolResult:
         raise FsToolError(f"fichier introuvable : {rel}")
     if not target.is_file():
         raise FsToolError(f"n'est pas un fichier : {rel}")
+
     ext = target.suffix.lower()
     size = target.stat().st_size
+
+    # PDF / image → ingestion native (le contenu binaire est joint au tour).
     if ext == ".pdf" or ext in _IMAGE_EXTS:
         if size > _DOC_MAX_BYTES:
             raise FsToolError(
@@ -228,11 +342,14 @@ def _do_read(root: Path, args: dict) -> FsToolResult:
                 "label": rel,
             },
         )
+
+    # Fichier texte.
     raw = target.read_bytes()
     if b"\x00" in raw[:8192]:
         raise FsToolError(f"fichier binaire non lisible en texte : {rel}")
     content = raw.decode("utf-8", errors="replace")
     lines = content.splitlines()
+
     start = 0
     offset = args.get("offset")
     if isinstance(offset, int) and offset > 0:
@@ -245,6 +362,7 @@ def _do_read(root: Path, args: dict) -> FsToolResult:
         selected = selected[:limit]
     elif isinstance(limit, str) and limit.isdigit() and int(limit) > 0:
         selected = selected[:int(limit)]
+
     numbered = "\n".join(
         f"{start + i + 1:>6}\t{ln}" for i, ln in enumerate(selected)
     )
@@ -255,6 +373,8 @@ def _do_read(root: Path, args: dict) -> FsToolResult:
     if truncated:
         header += " : RÉSULTAT TRONQUÉ, relire avec offset/limit pour la suite"
     return FsToolResult("Read", True, text=f"{header}\n{numbered}")
+
+
 def _do_glob(root: Path, args: dict) -> FsToolResult:
     pattern = (args.get("pattern") or "").strip()
     if not pattern:
@@ -282,6 +402,8 @@ def _do_glob(root: Path, args: dict) -> FsToolResult:
     if len(matches) >= _GLOB_MAX:
         head += " (limite atteinte)"
     return FsToolResult("Glob", True, text=f"{head} :\n" + "\n".join(matches))
+
+
 def _do_grep(root: Path, args: dict) -> FsToolResult:
     pattern = (args.get("pattern") or "").strip()
     if not pattern:
@@ -291,6 +413,7 @@ def _do_grep(root: Path, args: dict) -> FsToolResult:
         rx = re.compile(pattern, flags)
     except re.error as e:
         raise FsToolError(f"expression régulière invalide : {e}") from e
+
     root = root.resolve()
     base = root
     sub = (args.get("path") or "").strip()
@@ -298,9 +421,11 @@ def _do_grep(root: Path, args: dict) -> FsToolResult:
         base = _resolve(root, sub)
         if not base.exists():
             raise FsToolError(f"chemin introuvable : {sub}")
+
     file_glob = (args.get("glob") or "**/*").strip()
     if ".." in file_glob:
         raise FsToolError(f"motif glob invalide : {file_glob}")
+
     if base.is_file():
         files = [base]
     else:
@@ -308,6 +433,7 @@ def _do_grep(root: Path, args: dict) -> FsToolResult:
             files = sorted(base.glob(file_glob))
         except (ValueError, OSError) as e:
             raise FsToolError(f"motif glob invalide : {e}") from e
+
     out: list[str] = []
     scanned = 0
     for f in files:
@@ -334,6 +460,7 @@ def _do_grep(root: Path, args: dict) -> FsToolResult:
                 out.append(f"{rel}:{i}: {ln.strip()[:240]}")
                 if len(out) >= _GREP_MAX:
                     break
+
     if not out:
         return FsToolResult(
             "Grep", True,
@@ -344,7 +471,16 @@ def _do_grep(root: Path, args: dict) -> FsToolResult:
     if len(out) >= _GREP_MAX:
         head += " (limite atteinte, affine le motif)"
     return FsToolResult("Grep", True, text=f"{head} :\n" + "\n".join(out))
+
+
 def execute_fs_tool(name: str, args: Optional[dict], root) -> FsToolResult:
+    """Exécute un outil FS et renvoie un ``FsToolResult``.
+
+    Ne lève jamais : toute erreur (chemin invalide, fichier absent, regex
+    cassée…) est capturée et renvoyée en ``FsToolResult(ok=False)`` avec un
+    message lisible : le modèle voit l'erreur et peut se corriger, le stream
+    n'est pas interrompu.
+    """
     args = args or {}
     try:
         root_path = Path(root)
@@ -357,19 +493,39 @@ def execute_fs_tool(name: str, args: Optional[dict], root) -> FsToolResult:
         return FsToolResult(name, False, text=f"Erreur : outil inconnu « {name} ».")
     except FsToolError as e:
         return FsToolResult(name, False, text=f"Erreur : {e}")
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 (robustesse : jamais casser le stream)
         logger.exception("execute_fs_tool(%s) a levé", name)
         return FsToolResult(name, False, text=f"Erreur interne : {e}")
+
+
+# ============================================================ Marqueur de puce
+
+#: Délimiteurs du marqueur d'appel d'outil injecté dans le flux texte. Le
+#: front (app.js `_renderToolCallChip`) les reconnaît et rend une puce animée
+#: « 🔍 Lecture de X » entre le texte d'avant et celui d'après l'appel.
+#: Délimiteurs choisis pour ne PAS entrer en collision avec les balises du
+#: parser (`<<<TTS>>>`, `<<<END>>>`…), que le parser laisse passer en texte.
 TOOL_MARKER_OPEN = "<<<TOOLCALL>>>"
 TOOL_MARKER_CLOSE = "<<<TOOLEND>>>"
+
+
 def tool_call_label(name: str, args: Optional[dict]) -> str:
+    """Renvoie un libellé court d'un appel d'outil, pour la puce affichée."""
     args = args or {}
     if name == "Read":
         return str(args.get("path") or args.get("file_path") or "?")
     if name in ("Grep", "Glob"):
         return str(args.get("pattern") or "?")
     return name
+
+
 def tool_call_marker(name: str, label: str, ok: bool) -> str:
+    """Construit le marqueur texte d'un appel d'outil.
+
+    Injecté dans le flux (entre le texte d'avant et d'après l'appel) par la
+    boucle d'outils de ``claude_client``. Le front le remplace par une puce
+    visuelle. JSON minifié, sur une seule ligne.
+    """
     payload = json.dumps(
         {"tool": name, "label": label, "ok": bool(ok)}, ensure_ascii=False,
     )

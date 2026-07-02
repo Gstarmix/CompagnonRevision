@@ -6,14 +6,19 @@
   <meta name="referrer" content="no-referrer">
   <title>Compagnon de révision</title>
   <link rel="stylesheet" href="/static/style.css{{ static_v('style.css') }}">
-
+  <!-- KaTeX pour le rendu des formules LaTeX (Phase A.7.2 v4) -->
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
   <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/contrib/auto-render.min.js"></script>
-
+  <!-- Cropper.js v1.6.2 (MIT) : vendoré localement, Phase v15.7.10. Modal
+       de rognage des photos avant envoi au tuteur. ~37 KB JS + 4 KB CSS. -->
   <link rel="stylesheet" href="/static/vendor/cropperjs/cropper.min.css">
   <script defer src="/static/vendor/cropperjs/cropper.min.js"></script>
-
+  <!-- markdown-it v14 (MIT), Phase A.10.16, remplace renderMarkdown hardcoded.
+       CommonMark + tables GFM out of the box, listes/blockquotes imbriqués,
+       streaming-tolérant (entrées partielles ne throw pas). ~100 KB. Custom
+       renderers branchés dans app.js : image router (uploads/cours/external),
+       tooltips OCR-renamed, bouton 🗑 par image. -->
   <script defer src="https://cdn.jsdelivr.net/npm/markdown-it@14/dist/markdown-it.min.js"></script>
 </head>
 <body>
@@ -22,7 +27,10 @@
       <header id="dialogue-header">
         <form id="start-form">
           <span>Démarrer :</span>
-
+          <!-- Phase S4 (Cartable) : sélecteur de source : COURS (L1 Info,
+               arbo PDF historique) ou DROIT (contenu markdown produit par
+               Cartable : transcription + fiche). En DROIT, les combos COURS
+               sont masqués au profit des combos droit (matière → CM/TD → n°). -->
           <select name="source" id="start-form-source" title="Source du contenu : COURS (L1 Info) ou Droit (produit par Cartable)">
             <option value="cours" selected>📚 COURS</option>
             <option value="droit">⚖️ Droit</option>
@@ -42,7 +50,9 @@
           <select name="exo" title="Exercice (full = tout)" required disabled>
             <option value="">Exo…</option>
           </select>
-
+          <!-- Phase S4 (Cartable) : combos DROIT (cascade matière→type→n°),
+               masqués+désactivés par défaut (source COURS). Activés quand la
+               source Droit est sélectionnée. Pas d'exo ni de millésime. -->
           <select name="droit_matiere" id="start-form-droit-matiere" title="Matière (Droit)" hidden disabled>
             <option value="">Matière…</option>
           </select>
@@ -84,7 +94,11 @@
               <option value="">…</option>
             </select>
           </span>
-
+          <!-- Phase A.10.13 : warnings inline pour les checkboxes potentiellement
+               déroutantes (🎲 Sans énoncé, 💡 Sujet libre, et le checkbox
+               Sans énoncé GUI Tk). User : « si par erreur l'user clique sur
+               sans énoncé qu'un message d'erreur apparaisse pour le
+               contextualiser afin qu'il ne se fasse pas surprendre ». -->
           <div id="form-toggle-warnings" class="form-toggle-warnings" hidden>
             <div data-for="ignore_enonce" class="form-toggle-warning" hidden>
               ⚠ <strong>Sans énoncé activé.</strong> Le tuteur ignorera
@@ -99,23 +113,40 @@
             </div>
           </div>
         </form>
-
+        <!-- Phase A.8.3 : zone Sujet libre repliée par défaut, expand quand
+             la checkbox 💡 Sujet libre est cochée. Hors du <form> pour ne
+             pas casser le layout flex. JS injecte les valeurs dans le body
+             POST /api/start_session au submit. -->
         <div id="sujet-libre-zone" hidden>
           <label for="start-form-sujet-libre-text" class="sujet-libre-label">
             💡 Décris ton sujet (1-3 phrases) :
           </label>
           <textarea id="start-form-sujet-libre-text" rows="2" placeholder="Ex : je veux apprendre Python pour scrapper le web"></textarea>
-
+          <!-- Phase A.10.13a : checkbox `📄 Générer un PDF d'entraînement`
+               retirée. Le tuteur invente ses questions en conversation. -->
         </div>
       </header>
-
+      <!-- Phase v15.7.30.1 : bandeaux `#colle-format-chips` et
+           `#corrige-anchor-chips` supprimés : redondants avec les `<select>`
+           du form de lancement (`name="colle_format"` et
+           `name="corrige_anchor"`). Les selects sont devenus des contrôles
+           VIVANTS : `change` listener qui POST /api/set_colle_format ou
+           /api/set_corrige_anchor quand une session est active (sinon
+           c'est juste le choix initial pour le prochain Lancer). Markers
+           inline `.format-marker` / `.anchor-marker` toujours posés dans
+           le fil à chaque bascule (pas supprimés). -->
       <div id="dialogue-stream">
         <p class="placeholder">Pas de session active. Renseigne les champs et clique Lancer.</p>
       </div>
       <div id="attachments-tray" hidden></div>
       <footer id="dialogue-input">
         <button id="mic-btn" type="button" disabled title="Cliquer pour démarrer / arrêter l'enregistrement vocal">🎤</button>
-
+        <!-- Phase v15.7.10 : bouton 📷 Photo dédié, à côté de 📎 (fichier
+             générique). Sur mobile : ouvre la caméra arrière native.
+             Sur desktop : bascule sur l'onglet « 🔗 Distant » et le
+             scintille (le user prend la photo depuis son téléphone via
+             le QR/URL Tailscale Funnel, car la webcam desktop est inutile
+             pour révision papier). -->
         <button id="photo-btn" type="button" disabled title="Prendre une photo (mobile : caméra ; desktop : passer sur téléphone)">📷</button>
         <input id="photo-input" type="file" accept="image/*" capture="environment" style="display:none">
         <button id="media-btn" type="button" disabled title="Joindre un fichier (image, PDF, Excel…)">📎</button>
@@ -173,7 +204,16 @@
         </div>
         <button id="guided-remind-nav-btn" type="button" hidden title="Réinjecte le rappel auto-advance dans la conv (utile si le tuteur a oublié de naviguer en cours de session)">🤖 Rappeler nav au tuteur</button>
       </div>
-
+      <!-- Phase A.10.14 : retour à la barre horizontale top, mais en
+           mode icons-only (pas de label). L'user a essayé top→rail
+           vertical gauche→rail vertical droite et finalement revient au
+           top : « j'aime pas, à droite j'aime pas non plus, donc
+           remets en haut mais garde le genre de style […] pas besoin
+           de texte les emoji sont suffisamment compréhensible ». Le
+           tooltip natif via title= assure la découvrabilité.
+           Style hérité du rail : emojis désaturés (saturate 0.4 +
+           opacity 0.8) sur inactifs, pop sur hover/active, pill
+           accent en bas de l'onglet actif. -->
       <div id="sidebar-tabs" role="tablist">
         <button class="sb-tab active" data-tab="quota" role="tab" type="button" title="Quota Pro Max">📊</button>
         <button class="sb-tab" data-tab="corrige" role="tab" type="button" title="Documents (énoncé / corrigé / script)">📚</button>
@@ -191,7 +231,11 @@
           <div id="quota-content">…</div>
         </div>
         <div class="sb-pane" data-pane="corrige">
-
+          <!-- Phase A.10.13c : Sommaire dynamique en haut du pane Docs.
+               Construit en live à partir des sections / exercices /
+               questions que le tuteur introduit dans ses réponses.
+               Édition inline, toggle on/off, click → scroll vers la
+               bulle source. -->
           <div id="outline-panel">
             <div id="outline-header">
               <h3>📑 Sommaire de la séance</h3>
@@ -219,7 +263,7 @@
             <button id="corrige-next" type="button" title="Page suivante">➡</button>
           </div>
         </div>
-
+        <!-- Phase v15.7.23 : onglet Notes (sélections sauvegardées) -->
         <div class="sb-pane" data-pane="notes">
           <div id="notes-header">
             <h2>🔖 Notes sauvegardées</h2>
@@ -229,7 +273,11 @@
             <div class="notes-empty">Aucune note pour l'instant.</div>
           </div>
         </div>
-
+        <!-- Phase A.9.1 : onglet 📸 Photos (galerie auto des images envoyées
+             pendant la séance). Chaque envoi de photo s'enregistre côté
+             backend ; ici on affiche les vignettes pour pouvoir revenir
+             les consulter quand la conversation s'allonge. Le 🗑 retire
+             juste l'entrée de la galerie, pas le fichier disque. -->
         <div class="sb-pane" data-pane="photos">
           <div id="photos-header">
             <h2>📸 Photos de la séance</h2>
@@ -239,7 +287,11 @@
             <div class="photos-empty">Aucune photo pour l'instant.</div>
           </div>
         </div>
-
+        <!-- Phase A.10 : onglet 📌 Consignes épinglées (mémoire persistante
+             de séance). Les consignes user (chip sur bulle) et tuteur
+             (balise <<<REMEMBER>>>) sont injectées en préfixe de chaque
+             user message LLM. Toggle, édition inline, suppression, import
+             depuis une autre session. -->
         <div class="sb-pane" data-pane="stickies">
           <div id="stickies-header">
             <h2>📌 Consignes épinglées</h2>
@@ -265,7 +317,11 @@
           <h2>Accès distant</h2>
           <div id="connection-content">…</div>
         </div>
-
+        <!-- Phase A.10.5 : onglet 🎓 Astuces (coach marks). Liste curated
+             d'astuces avec bouton « Voir où » qui déclenche un effet
+             visuel guidé (spotlight) sur l'élément concerné : scintille
+             un autre onglet du rail, surligne un bouton, scroll vers
+             une bulle, pré-remplit le textarea, etc. -->
         <div class="sb-pane" data-pane="tips">
           <div id="tips-header">
             <h2>🎓 Astuces et raccourcis</h2>
@@ -285,13 +341,13 @@
             </p>
           </div>
           <div id="colors-list">
-
+            <!-- 8 rows générées par JS (renderColorsPanel) -->
           </div>
           <div id="colors-footer">
             <button type="button" id="colors-reset-btn">↺ Reset aux valeurs par défaut</button>
           </div>
         </div>
-      </div>
+      </div> <!-- /#sidebar-tab-content -->
       <div id="sidebar-footer">
         <div id="record-indicator">Maintenir [Espace] pour parler</div>
         <div id="sidebar-footer-actions">
@@ -301,12 +357,15 @@
       </div>
     </aside>
   </div>
-
+  <!-- Lightbox modal pour aggrandir les slides du mode guidé (Phase A.7.2 v6.4) -->
   <div id="lightbox" hidden>
     <img id="lightbox-img" alt="Slide aggrandie">
     <div id="lightbox-hint">Clic n'importe où ou Échap pour fermer</div>
   </div>
-
+  <!-- Phase v15.7.10 : Modal de rognage photo (Cropper.js).
+       Ouvert via le bouton ✂ dans chaque thumbnail du tray (image only).
+       Output : POST /api/pending_attachments/<id>/replace avec le blob
+       cropped. -->
   <div id="crop-modal" hidden>
     <div class="crop-card">
       <div class="crop-header">
@@ -318,7 +377,9 @@
       </div>
       <div class="crop-actions">
         <button type="button" id="crop-cancel" class="crop-btn-secondary">↩ Annuler</button>
-
+        <!-- Phase v15.7.16 : boutons de rotation pour les photos prises
+             de travers (téléphone tenu en biais, EXIF faux). 90° par
+             clic, dans les 2 sens. -->
         <button type="button" id="crop-rotate-left" class="crop-btn-secondary" title="Pivoter à gauche (90°)">↺ 90°</button>
         <button type="button" id="crop-rotate-right" class="crop-btn-secondary" title="Pivoter à droite (90°)">↻ 90°</button>
         <button type="button" id="crop-reset" class="crop-btn-secondary" title="Réinitialiser la sélection">↻ Reset</button>
@@ -326,7 +387,12 @@
       </div>
     </div>
   </div>
-
+  <!-- Phase v15.7.22 : Modal de PRÉ-PREVIEW avant upload d'une image
+       (alignement UX Clipboard_Relay v0.1.5). Quand une image arrive
+       par 📎/paste/drag-drop/📷, on ouvre cette modal AVANT d'uploader,
+       l'utilisateur recadre/pivote ou choisit "Envoyer tel quel" ou
+       Annule. Output : Promise<File|null>. Distincte de #crop-modal
+       qui sert au re-crop d'un attachment déjà uploadé. -->
   <div id="crop-preview-modal" hidden>
     <div class="crop-card">
       <div class="crop-header">
@@ -346,7 +412,10 @@
       </div>
     </div>
   </div>
-
+  <!-- Phase A.10 : Modal d'import de consignes depuis une autre session.
+       1ʳᵉ vue : liste des sessions avec leur compteur de stickies.
+       2ᵉ vue : liste des stickies de la session choisie avec checkboxes.
+       Bouton final = POST /api/stickies/import_from/<id> avec ids cochés. -->
   <div id="stickies-import-modal" hidden>
     <div class="sim-card">
       <div class="sim-header">
@@ -377,7 +446,7 @@
       </div>
     </div>
   </div>
-
+  <!-- Modal de confirmation « session existante » au lancement -->
   <div id="start-conflict-modal" hidden>
     <div class="scm-card">
       <h3>Session existante détectée</h3>

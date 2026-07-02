@@ -1,25 +1,43 @@
+"""
+test_prompt_builder.py : couverture des comportements clés du PromptBuilder.
+
+Lance avec :
+    python -m unittest tests.test_prompt_builder
+
+(depuis la racine de Compagnon_Revision).
+"""
+
 import sys
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
+
+# Path setup
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = ROOT / "_scripts"
 DIALOGUE = SCRIPTS / "dialogue"
 for _p in (str(ROOT), str(SCRIPTS), str(DIALOGUE)):
     if _p not in sys.path:
         sys.path.insert(0, _p)
-from prompt_builder import (
+
+from prompt_builder import (  # noqa: E402
     CM_TRANSCRIPTION_WORD_CAP,
     PromptBuilder,
     SessionContext,
 )
+
+
 def make_blank_pdf(path: Path) -> None:
+    """Crée un PDF d'une page blanche (extract_text retournera '')."""
     from pypdf import PdfWriter
     w = PdfWriter()
     w.add_blank_page(width=200, height=200)
     with path.open("wb") as f:
         w.write(f)
+
+
 class TestPromptBuilder(unittest.TestCase):
+
     def setUp(self):
         self._tmpobj = TemporaryDirectory()
         self.tmp = Path(self._tmpobj.name)
@@ -31,10 +49,14 @@ class TestPromptBuilder(unittest.TestCase):
         self.cours_root = self.tmp / "COURS"
         self.cours_root.mkdir()
         self.builder = PromptBuilder(self.system_prompt, self.cours_root)
+
+        # Énoncé PDF blanc (extract_text -> "" -> message de fallback explicite)
         self.enonce = self.tmp / "AN1_TD5_enonce.pdf"
         make_blank_pdf(self.enonce)
+
     def tearDown(self):
         self._tmpobj.cleanup()
+
     def _ctx(self, **overrides) -> SessionContext:
         defaults = dict(
             matiere="AN1",
@@ -45,10 +67,17 @@ class TestPromptBuilder(unittest.TestCase):
         )
         defaults.update(overrides)
         return SessionContext(**defaults)
+
+    # ---------------------------------------------------------------- system_prompt
+
     def test_system_prompt_property_loads_file(self):
         self.assertIn("prof particulier", self.builder.system_prompt)
+        # Immutable côté API : property non-settable
         with self.assertRaises(AttributeError):
-            self.builder.system_prompt = "autre chose"
+            self.builder.system_prompt = "autre chose"  # type: ignore[misc]
+
+    # ---------------------------------------------------------------- minimal
+
     def test_minimal_message_only_enonce(self):
         msg = self.builder.build_initial_context_message(self._ctx())
         self.assertIn("=== CONTEXTE DE LA SÉANCE ===", msg)
@@ -56,17 +85,24 @@ class TestPromptBuilder(unittest.TestCase):
         self.assertIn("Type : TD 5", msg)
         self.assertIn("Exercice ciblé : exercice 3", msg)
         self.assertIn("=== ÉNONCÉ DE L'EXERCICE ===", msg)
+        # PDF blanc -> message scanné
         self.assertIn("PDF probablement scanné", msg)
+        # Sections optionnelles absentes
         self.assertNotIn("=== TRANSCRIPTION CM PERTINENTE ===", msg)
         self.assertNotIn("=== POLY DU PROF", msg)
         self.assertNotIn("POINTS FAIBLES HISTORIQUES", msg)
+        # Instructions présentes
         self.assertIn("=== INSTRUCTIONS ===", msg)
         self.assertIn("Démarre la séance", msg)
         self.assertNotIn("[RESUME_SESSION]", msg)
+
     def test_exo_full_label(self):
         msg = self.builder.build_initial_context_message(self._ctx(exo="full"))
         self.assertIn("Exercice ciblé : tout le TD/TP", msg)
         self.assertNotIn("exercice full", msg)
+
+    # ---------------------------------------------------------------- resume
+
     def test_resume_message(self):
         msg = self.builder.build_initial_context_message(
             self._ctx(), is_resume=True
@@ -74,6 +110,9 @@ class TestPromptBuilder(unittest.TestCase):
         self.assertTrue(msg.startswith("[RESUME_SESSION]"))
         self.assertIn("Reprends la séance interrompue", msg)
         self.assertNotIn("Démarre la séance", msg)
+
+    # ---------------------------------------------------------------- CM transcription cap
+
     def test_cm_transcription_under_cap(self):
         cm = self.tmp / "cm.txt"
         cm.write_text("alpha bêta gamma delta", encoding="utf-8")
@@ -83,6 +122,7 @@ class TestPromptBuilder(unittest.TestCase):
         self.assertIn("=== TRANSCRIPTION CM PERTINENTE ===", msg)
         self.assertIn("alpha bêta gamma delta", msg)
         self.assertNotIn("tronqué", msg)
+
     def test_cm_transcription_over_cap_is_truncated(self):
         cm = self.tmp / "cm_long.txt"
         cm.write_text(" ".join(f"mot{i}" for i in range(CM_TRANSCRIPTION_WORD_CAP + 50)),
@@ -91,23 +131,35 @@ class TestPromptBuilder(unittest.TestCase):
             self._ctx(cm_transcription_path=cm)
         )
         self.assertIn(f"tronqué à {CM_TRANSCRIPTION_WORD_CAP} mots", msg)
+        # Le dernier mot capé doit être présent, le 1er au-delà ne doit pas l'être
         self.assertIn(f"mot{CM_TRANSCRIPTION_WORD_CAP - 1}", msg)
         self.assertNotIn(
             f" mot{CM_TRANSCRIPTION_WORD_CAP + 10} ", msg + " "
         )
+
+    # ---------------------------------------------------------------- PDF errors
+
     def test_pdf_missing_file_graceful(self):
         ctx = self._ctx(enonce_path=self.tmp / "ghost.pdf")
         msg = self.builder.build_initial_context_message(ctx)
         self.assertIn("PDF introuvable", msg)
+
     def test_pdf_corrupt_file_graceful(self):
         bogus = self.tmp / "bogus.pdf"
         bogus.write_text("ceci n'est pas un PDF", encoding="utf-8")
         ctx = self._ctx(enonce_path=bogus)
         msg = self.builder.build_initial_context_message(ctx)
         self.assertIn("Extraction PDF échouée", msg)
+
+    # ---------------------------------------------------------------- session_context re-export
+
     def test_session_context_reexport_from_session_state(self):
+        # Importable des deux côtés, même classe
         from session_state import SessionContext as ContextFromState
         self.assertIs(ContextFromState, SessionContext)
+
+    # ---------------------------------------------------------------- Phase A.5 : corrigé / perso
+
     def test_corrigé_section_inserted_when_correction_paths(self):
         corr = self.tmp / "correction_TD5_ex3_AN1.pdf"
         make_blank_pdf(corr)
@@ -116,9 +168,11 @@ class TestPromptBuilder(unittest.TestCase):
         )
         self.assertIn("=== CORRIGÉ OFFICIEL ===", msg)
         self.assertIn("--- correction_TD5_ex3_AN1.pdf ---", msg)
+
     def test_corrigé_section_absent_when_no_correction_paths(self):
         msg = self.builder.build_initial_context_message(self._ctx())
         self.assertNotIn("CORRIGÉ OFFICIEL", msg)
+
     def test_corrigé_section_multi_files(self):
         a = self.tmp / "correction_TD5_ex3_AN1.pdf"
         b = self.tmp / "correction_TD5_ex4_AN1.pdf"
@@ -129,6 +183,7 @@ class TestPromptBuilder(unittest.TestCase):
         )
         self.assertIn("--- correction_TD5_ex3_AN1.pdf ---", msg)
         self.assertIn("--- correction_TD5_ex4_AN1.pdf ---", msg)
+
     def test_tache_section_inserted(self):
         tache = self.tmp / "TACHE_AN1_TD5_ex3.md"
         tache.write_text("# Ma TACHE\nQuelques notes.", encoding="utf-8")
@@ -137,6 +192,7 @@ class TestPromptBuilder(unittest.TestCase):
         )
         self.assertIn("=== TACHE PERSO", msg)
         self.assertIn("Quelques notes", msg)
+
     def test_script_oral_section_inserted(self):
         script = self.tmp / "script_oral.txt"
         script.write_text("Bonjour, je commence par énoncer le théorème...",
@@ -146,6 +202,7 @@ class TestPromptBuilder(unittest.TestCase):
         )
         self.assertIn("=== SCRIPT ORAL PERSO (TTS-ready) ===", msg)
         self.assertIn("énoncer le théorème", msg)
+
     def test_slides_pdf_mention_only(self):
         slides = self.tmp / "slides_AN1_TD5.pdf"
         make_blank_pdf(slides)
@@ -155,6 +212,7 @@ class TestPromptBuilder(unittest.TestCase):
         self.assertIn("=== SLIDES PERSO (mention) ===", msg)
         self.assertIn(str(slides), msg)
         self.assertIn("Contenu non extrait", msg)
+
     def test_perso_text_file_word_cap(self):
         from prompt_builder import PERSO_MATERIAL_WORD_CAP
         big = self.tmp / "big_tache.md"
@@ -166,12 +224,18 @@ class TestPromptBuilder(unittest.TestCase):
             self._ctx(tache_path=big)
         )
         self.assertIn(f"tronqué à {PERSO_MATERIAL_WORD_CAP} mots", msg)
+
     def test_corrigé_total_char_cap_truncation(self):
+        # Crée 2 PDFs textuels qui dépassent ensemble le cap. On utilise un
+        # PDF "bidon" qui sera retourné comme "Extraction PDF échouée" (texte
+        # long aussi) ; peu importe le contenu, on teste que le cap kicks in.
         from prompt_builder import CORRECTION_TOTAL_CHAR_CAP
+        # Force un cap test bas via un patch du module (plus simple qu'écrire
+        # 80k caractères dans un PDF). On clone le builder et override.
         import prompt_builder as pb
         original_cap = pb.CORRECTION_TOTAL_CHAR_CAP
         try:
-            pb.CORRECTION_TOTAL_CHAR_CAP = 100
+            pb.CORRECTION_TOTAL_CHAR_CAP = 100  # cap minuscule pour le test
             corr_a = self.tmp / "correction_a.pdf"
             corr_b = self.tmp / "correction_b.pdf"
             make_blank_pdf(corr_a)
@@ -183,50 +247,72 @@ class TestPromptBuilder(unittest.TestCase):
             self.assertIn("correction_b.pdf", msg)
         finally:
             pb.CORRECTION_TOTAL_CHAR_CAP = original_cap
+
     def test_annee_field_optional_default_none(self):
         ctx = self._ctx()
         self.assertIsNone(ctx.annee)
+        # Avec annee fourni, ne casse rien
         ctx_cc = self._ctx(annee="2025-26", type="CC", num="1", exo="full")
         self.assertEqual(ctx_cc.annee, "2025-26")
+
+    # ---------------------------------------------------------------- Phase v15.7.4 : FORMAT COLLE
+
     def test_format_colle_default_mixte_when_mode_colle(self):
+        """En mode colle (défaut), le bloc [FORMAT COLLE : mixte] est injecté."""
         msg = self.builder.build_initial_context_message(self._ctx())
         self.assertIn("[FORMAT COLLE : mixte]", msg)
+
     def test_format_colle_oral_explicit(self):
         msg = self.builder.build_initial_context_message(
             self._ctx(), mode="colle", colle_format="oral",
         )
         self.assertIn("[FORMAT COLLE : oral]", msg)
         self.assertNotIn("[FORMAT COLLE : mixte]", msg)
+
     def test_format_colle_photos_explicit(self):
         msg = self.builder.build_initial_context_message(
             self._ctx(), mode="colle", colle_format="photos",
         )
         self.assertIn("[FORMAT COLLE : photos]", msg)
+
     def test_format_colle_invalid_falls_back_to_mixte(self):
         msg = self.builder.build_initial_context_message(
             self._ctx(), mode="colle", colle_format="bidule",
         )
         self.assertIn("[FORMAT COLLE : mixte]", msg)
         self.assertNotIn("[FORMAT COLLE : bidule]", msg)
+
     def test_format_colle_absent_in_guide_mode(self):
+        """En mode guidé, le bloc [FORMAT COLLE : ...] est OMIS : le tuteur
+        guidé a déjà accès aux PDF via Read/Grep/Glob, le paramètre est
+        sans effet et ne doit pas polluer son contexte initial."""
         msg = self.builder.build_initial_context_message(
             self._ctx(), mode="guidé", colle_format="photos",
         )
         self.assertNotIn("[FORMAT COLLE", msg)
+
     def test_format_colle_normalize_helper(self):
+        """_normalize_colle_format : casse insensible, fallback mixte."""
         self.assertEqual(PromptBuilder._normalize_colle_format("ORAL"), "oral")
         self.assertEqual(PromptBuilder._normalize_colle_format("Photos"), "photos")
         self.assertEqual(PromptBuilder._normalize_colle_format("MIXTE"), "mixte")
         self.assertEqual(PromptBuilder._normalize_colle_format(""), "mixte")
         self.assertEqual(PromptBuilder._normalize_colle_format("nimporte"), "mixte")
-        self.assertEqual(PromptBuilder._normalize_colle_format(None), "mixte")
+        self.assertEqual(PromptBuilder._normalize_colle_format(None), "mixte")  # type: ignore[arg-type]
+
+    # ---------------------------------------------------------------- Phase v15.7.30 : ANCRAGE CORRIGÉ
+
     def _make_dummy_correction(self) -> Path:
+        """Crée un PDF blanc qui sert de corrigé pour tester le skip mode `aucun`."""
         path = self.tmp / "correction_TD5_ex3_AN1.pdf"
         make_blank_pdf(path)
         return path
+
     def test_corrige_anchor_default_strict_when_mode_colle(self):
+        """En mode colle (défaut), le bloc [ANCRAGE CORRIGÉ : strict] est injecté."""
         msg = self.builder.build_initial_context_message(self._ctx())
         self.assertIn("[ANCRAGE CORRIGÉ : strict]", msg)
+
     def test_corrige_anchor_consultatif_explicit(self):
         corr = self._make_dummy_correction()
         msg = self.builder.build_initial_context_message(
@@ -234,38 +320,61 @@ class TestPromptBuilder(unittest.TestCase):
             mode="colle", corrige_anchor="consultatif",
         )
         self.assertIn("[ANCRAGE CORRIGÉ : consultatif]", msg)
+        # En consultatif, le bloc CORRIGÉ OFFICIEL reste injecté
         self.assertIn("=== CORRIGÉ OFFICIEL ===", msg)
+
     def test_corrige_anchor_aucun_skips_corrige_block(self):
+        """Mode `aucun` : le bloc CORRIGÉ OFFICIEL est carrément absent du
+        contexte initial, même si correction_paths fournit des PDFs.
+        """
         corr = self._make_dummy_correction()
         msg = self.builder.build_initial_context_message(
             self._ctx(correction_paths=[corr]),
             mode="colle", corrige_anchor="aucun",
         )
         self.assertIn("[ANCRAGE CORRIGÉ : aucun]", msg)
+        # Le bloc CORRIGÉ OFFICIEL est skippé
         self.assertNotIn("=== CORRIGÉ OFFICIEL ===", msg)
+        # Mais l'énoncé reste là
         self.assertIn("=== ÉNONCÉ DE L'EXERCICE ===", msg)
+
     def test_corrige_anchor_invalid_falls_back_to_strict(self):
         msg = self.builder.build_initial_context_message(
             self._ctx(), mode="colle", corrige_anchor="weird",
         )
         self.assertIn("[ANCRAGE CORRIGÉ : strict]", msg)
         self.assertNotIn("[ANCRAGE CORRIGÉ : weird]", msg)
+
     def test_corrige_anchor_absent_in_guide_mode(self):
+        """En mode guidé, le bloc [ANCRAGE CORRIGÉ : ...] est OMIS : le
+        tuteur guidé résout les PDF lui-même via Read/Grep/Glob, l'ancrage
+        est manuel.
+        """
         msg = self.builder.build_initial_context_message(
             self._ctx(), mode="guidé", corrige_anchor="consultatif",
         )
         self.assertNotIn("[ANCRAGE CORRIGÉ", msg)
+
     def test_corrige_anchor_normalize_helper(self):
+        """_normalize_corrige_anchor : casse insensible, fallback strict,
+        alias `sans_corrigé`/`sans corrige` → `aucun`.
+        """
         self.assertEqual(PromptBuilder._normalize_corrige_anchor("STRICT"), "strict")
         self.assertEqual(PromptBuilder._normalize_corrige_anchor("Consultatif"), "consultatif")
         self.assertEqual(PromptBuilder._normalize_corrige_anchor("AUCUN"), "aucun")
+        # Aliases sans_corrigé
         self.assertEqual(PromptBuilder._normalize_corrige_anchor("sans_corrigé"), "aucun")
         self.assertEqual(PromptBuilder._normalize_corrige_anchor("sans_corrige"), "aucun")
         self.assertEqual(PromptBuilder._normalize_corrige_anchor("sans corrigé"), "aucun")
+        # Fallbacks
         self.assertEqual(PromptBuilder._normalize_corrige_anchor(""), "strict")
         self.assertEqual(PromptBuilder._normalize_corrige_anchor("nimporte"), "strict")
-        self.assertEqual(PromptBuilder._normalize_corrige_anchor(None), "strict")
+        self.assertEqual(PromptBuilder._normalize_corrige_anchor(None), "strict")  # type: ignore[arg-type]
+
     def test_corrige_anchor_strict_keeps_corrige_block(self):
+        """En mode strict (défaut), le bloc CORRIGÉ OFFICIEL est bien injecté
+        si correction_paths fournit des PDFs. Régression check du skip.
+        """
         corr = self._make_dummy_correction()
         msg = self.builder.build_initial_context_message(
             self._ctx(correction_paths=[corr]),
@@ -273,12 +382,19 @@ class TestPromptBuilder(unittest.TestCase):
         )
         self.assertIn("=== CORRIGÉ OFFICIEL ===", msg)
         self.assertIn("[ANCRAGE CORRIGÉ : strict]", msg)
+
+
 class TestDroitContext(unittest.TestCase):
+    """Phase S4 (Cartable) : branche DROIT de build_initial_context_message :
+    contenu = transcription + fiche markdown, aucun corrigé officiel."""
+
     def setUp(self):
         self._tmpobj = TemporaryDirectory()
         self.tmp = Path(self._tmpobj.name)
         self.system_prompt = self.tmp / "PROMPT_SYSTEME.md"
         self.system_prompt.write_text("# Prompt test\nColleur exigeant.", encoding="utf-8")
+        # Le cours_root du builder est ignoré par la branche droit (chemins
+        # absolus portés par le SessionContext) ; on en passe un quelconque.
         self.builder = PromptBuilder(self.system_prompt, self.tmp)
         self.transcription = self.tmp / "CM3_droit-personnes_1509.txt"
         self.transcription.write_text(
@@ -289,8 +405,10 @@ class TestDroitContext(unittest.TestCase):
             "# Fiche CM3\n- La personne physique acquiert la personnalité à la "
             "naissance vivante et viable.", encoding="utf-8"
         )
+
     def tearDown(self):
         self._tmpobj.cleanup()
+
     def _ctx(self, **overrides) -> SessionContext:
         defaults = dict(
             matiere="droit-personnes",
@@ -303,12 +421,14 @@ class TestDroitContext(unittest.TestCase):
         )
         defaults.update(overrides)
         return SessionContext(**defaults)
+
     def test_droit_injects_transcription_and_fiche(self):
         msg = self.builder.build_initial_context_message(self._ctx())
         self.assertIn("=== TRANSCRIPTION DU COURS ===", msg)
         self.assertIn("personnalité juridique commence", msg)
         self.assertIn("=== FICHE DE RÉVISION ===", msg)
         self.assertIn("naissance vivante et viable", msg)
+
     def test_droit_has_no_enonce_no_corrige(self):
         msg = self.builder.build_initial_context_message(self._ctx())
         self.assertNotIn("=== ÉNONCÉ DE L'EXERCICE ===", msg)
@@ -316,6 +436,7 @@ class TestDroitContext(unittest.TestCase):
         self.assertNotIn("[ANCRAGE CORRIGÉ", msg)
         self.assertIn("[SOURCE : droit]", msg)
         self.assertIn("PAS de corrigé officiel", msg)
+
     def test_droit_references_listed(self):
         methodo = self.tmp / "methodo_dissertation.md"
         methodo.write_text("# Méthodo dissertation", encoding="utf-8")
@@ -327,6 +448,7 @@ class TestDroitContext(unittest.TestCase):
         self.assertIn("=== RÉFÉRENCES DISPONIBLES (méthodo & arrêts) ===", msg)
         self.assertIn("Méthodo : methodo_dissertation.md", msg)
         self.assertIn("Fiche d'arrêt : arret_perruche.md", msg)
+
     def test_droit_instructions_mode_aware(self):
         colle = self.builder.build_initial_context_message(self._ctx(), mode="colle")
         self.assertIn("Mode colle (droit)", colle)
@@ -334,10 +456,13 @@ class TestDroitContext(unittest.TestCase):
         self.assertIn("Mode découverte (droit)", deco)
         guide = self.builder.build_initial_context_message(self._ctx(), mode="guidé")
         self.assertIn("Mode guidé (droit)", guide)
+
     def test_droit_transcription_capped(self):
         long_txt = " ".join(["mot"] * (CM_TRANSCRIPTION_WORD_CAP + 500))
         self.transcription.write_text(long_txt, encoding="utf-8")
         msg = self.builder.build_initial_context_message(self._ctx())
         self.assertIn("[...tronqué", msg)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

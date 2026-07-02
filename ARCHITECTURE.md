@@ -275,15 +275,18 @@ from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
 
+
 class ParserEventType(Enum):
     TEXT_CHUNK = "text_chunk"        # texte à afficher au front
     TTS = "tts"                       # phrase à vocaliser
     END_SESSION = "end_session"       # fin de séance
 
+
 @dataclass
 class ParserEvent:
     type: ParserEventType
     payload: str | dict
+
 
 # Balises supportées (ouverture)
 _TAG_TTS_OPEN = "<<<TTS>>>"
@@ -292,6 +295,7 @@ _TAG_CLOSE = "<<<END>>>"
 
 # Pour la reconnaissance partielle pendant le buffering
 _OPENING_PATTERNS = [_TAG_TTS_OPEN, _TAG_END_SESSION]
+
 
 class StreamParser:
     """Machine à états qui consomme un stream SSE caractère par caractère
@@ -440,7 +444,7 @@ class ClaudeClient:
     ) -> dict:
         """Appelle Claude avec l'historique courant, streame la réponse,
         et délègue le parsing à StreamParser.
-
+        
         Returns: dict avec stats {"input_tokens": int, "output_tokens": int}
         Note: la réponse complète de Claude est ajoutée à l'historique.
         """
@@ -571,6 +575,7 @@ class SessionContext:
     cm_transcription_path: Optional[Path] = None
     cm_poly_path: Optional[Path] = None
 
+
 class PromptBuilder:
     def __init__(self, system_prompt_path: Path, cours_root: Path):
         self._system_prompt = system_prompt_path.read_text(encoding="utf-8")
@@ -586,7 +591,7 @@ class PromptBuilder:
         is_resume: bool = False,
     ) -> str:
         """Construit le premier message user à envoyer à Claude.
-
+        
         Si is_resume=True, ajoute le marker [RESUME_SESSION] et un récap court
         des derniers échanges de la session interrompue.
         """
@@ -962,6 +967,7 @@ if str(ARSENAL_PATH) not in sys.path:
 from claude_usage import fetch_usage  # noqa: E402
 from runtime_settings import get_session_threshold_pct, get_weekly_threshold_pct
 
+
 def can_start_session() -> tuple[bool, str]:
     """Retourne (autorisé, raison_si_non)."""
     try:
@@ -981,6 +987,7 @@ def can_start_session() -> tuple[bool, str]:
     if usage.weekly_pct > weekly_threshold:
         return False, f"Quota hebdo à {usage.weekly_pct:.0f}% (seuil {weekly_threshold}%)"
     return True, ""
+
 
 def get_usage_snapshot() -> dict:
     """Snapshot pour affichage front (sidebar Flask + GUI Tkinter)."""
@@ -1046,6 +1053,7 @@ from _scripts.audio.transcribe_stream import WhisperTranscriber
 from _scripts.quota.quota_check import can_start_session
 from _scripts.web.app import run_flask_app
 
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("matiere", help="AN1, EN1, PSI, ...")
@@ -1063,10 +1071,11 @@ def main():
 
     # 2. Construit le contexte
     ctx = SessionContext(...)
-
+    
     # 3. Lance Flask en thread + ouvre navigateur
     run_flask_app(ctx, args.resume)
     return 0
+
 
 if __name__ == "__main__":
     raise SystemExit(main())

@@ -28,6 +28,7 @@
 
 ## 1. Les 5 moteurs supportés (et le 6ᵉ qu'on a snobbé)
 
+
 Le wrapper `claude_client.ClaudeClient` (cf. `_scripts/dialogue/claude_client.py`)
 expose 5 engines via une interface unique de streaming. Le choix se fait
 via `_secrets/engine_pref.json` (clé `engine`) ou la barre du haut de

@@ -1,7 +1,16 @@
+"""
+test_app_saved_selections.py : couverture endpoints Phase v15.7.23
+(POST / GET / DELETE /api/saved_selections).
+
+Vérifie : validation, persistance, listing, delete, role default,
+text vide / trop long, pas de session.
+"""
+
 import sys
 import unittest
 from pathlib import Path
 from unittest.mock import MagicMock, patch
+
 ROOT = Path(__file__).resolve().parent.parent
 SCRIPTS = ROOT / "_scripts"
 for _p in (
@@ -14,22 +23,32 @@ for _p in (
 ):
     if _p not in sys.path:
         sys.path.insert(0, _p)
+
+
 def _make_fake_state(initial_selections=None):
+    """Fake CompanionSession avec session_state.data['saved_selections']."""
     fake = MagicMock()
     fake.lock = MagicMock()
     fake.lock.__enter__ = MagicMock(return_value=None)
     fake.lock.__exit__ = MagicMock(return_value=False)
     fake.session_state = MagicMock()
     fake.session_state.data = {"saved_selections": list(initial_selections or [])}
+
     def _set_meta(key, value):
         fake.session_state.data[key] = value
     fake.session_state.set_meta.side_effect = _set_meta
     return fake
+
+
 class TestApiSavedSelections(unittest.TestCase):
+
     def setUp(self):
         import app
         self.app_module = app
         self.client = app.app.test_client()
+
+    # ============ GET ============
+
     def test_get_no_session(self):
         with patch.object(self.app_module, "_state", None):
             r = self.client.get("/api/saved_selections")
@@ -37,6 +56,7 @@ class TestApiSavedSelections(unittest.TestCase):
         body = r.get_json()
         self.assertEqual(body["selections"], [])
         self.assertFalse(body["active"])
+
     def test_get_returns_existing(self):
         sels = [
             {"id": "sel_x", "text": "Théorème", "role": "claude"},
@@ -48,17 +68,22 @@ class TestApiSavedSelections(unittest.TestCase):
         body = r.get_json()
         self.assertTrue(body["active"])
         self.assertEqual(len(body["selections"]), 2)
+
+    # ============ POST ============
+
     def test_post_no_session(self):
         with patch.object(self.app_module, "_state", None):
             r = self.client.post("/api/saved_selections",
                                  json={"text": "Some text"})
         self.assertEqual(r.status_code, 409)
+
     def test_post_text_vide(self):
         fake = _make_fake_state()
         with patch.object(self.app_module, "_state", fake):
             r = self.client.post("/api/saved_selections", json={"text": "  "})
         self.assertEqual(r.status_code, 400)
         self.assertIn("vide", r.get_json()["error"])
+
     def test_post_text_trop_long(self):
         fake = _make_fake_state()
         with patch.object(self.app_module, "_state", fake):
@@ -68,6 +93,7 @@ class TestApiSavedSelections(unittest.TestCase):
         body = r.get_json()
         self.assertEqual(body["max_chars"], 5000)
         self.assertEqual(body["got_chars"], 5001)
+
     def test_post_happy_path(self):
         fake = _make_fake_state()
         with patch.object(self.app_module, "_state", fake):
@@ -83,19 +109,24 @@ class TestApiSavedSelections(unittest.TestCase):
         self.assertEqual(sel["message_id"], "msg_abc123")
         self.assertEqual(sel["role"], "claude")
         self.assertIn("captured_at", sel)
+        # Persisté dans session_state.data
         self.assertEqual(len(fake.session_state.data["saved_selections"]), 1)
+
     def test_post_role_default_claude(self):
+        """role manquant ou invalide → fallback 'claude'."""
         fake = _make_fake_state()
         with patch.object(self.app_module, "_state", fake):
             r = self.client.post("/api/saved_selections",
                                  json={"text": "test"})
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.get_json()["role"], "claude")
+
         with patch.object(self.app_module, "_state", _make_fake_state()):
             r = self.client.post("/api/saved_selections",
                                  json={"text": "test", "role": "weird"})
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.get_json()["role"], "claude")
+
     def test_post_role_student_kept(self):
         fake = _make_fake_state()
         with patch.object(self.app_module, "_state", fake):
@@ -103,11 +134,14 @@ class TestApiSavedSelections(unittest.TestCase):
                                  json={"text": "test", "role": "student"})
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r.get_json()["role"], "student")
+
+    # Phase v15.7.26 : raw_text optional
     def test_post_with_raw_text(self):
+        """raw_text accepté et persisté à côté de text."""
         fake = _make_fake_state()
         with patch.object(self.app_module, "_state", fake):
             r = self.client.post("/api/saved_selections", json={
-                "text": "S = E·SEL",
+                "text": "S = E·SEL",  # rendu KaTeX visible
                 "raw_text": "Théorème : $S = E \\cdot \\overline{SEL}$ avec...",
                 "message_id": "msg_x",
                 "role": "claude",
@@ -116,7 +150,9 @@ class TestApiSavedSelections(unittest.TestCase):
         sel = r.get_json()
         self.assertEqual(sel["raw_text"],
                          "Théorème : $S = E \\cdot \\overline{SEL}$ avec...")
+
     def test_post_without_raw_text_default_none(self):
+        """raw_text absent → champ présent mais None (additif backward-compat)."""
         fake = _make_fake_state()
         with patch.object(self.app_module, "_state", fake):
             r = self.client.post("/api/saved_selections",
@@ -124,7 +160,9 @@ class TestApiSavedSelections(unittest.TestCase):
         self.assertEqual(r.status_code, 200)
         sel = r.get_json()
         self.assertIsNone(sel["raw_text"])
+
     def test_post_raw_text_capped_at_10000(self):
+        """raw_text > 10000 chars : tronqué silencieusement (pas 400)."""
         fake = _make_fake_state()
         with patch.object(self.app_module, "_state", fake):
             r = self.client.post("/api/saved_selections", json={
@@ -133,7 +171,9 @@ class TestApiSavedSelections(unittest.TestCase):
             })
         self.assertEqual(r.status_code, 200)
         self.assertEqual(len(r.get_json()["raw_text"]), 10000)
+
     def test_post_appends_not_replaces(self):
+        """Plusieurs POST = appends à la liste existante."""
         existing = [{"id": "sel_old", "text": "Existing", "role": "claude"}]
         fake = _make_fake_state(existing)
         with patch.object(self.app_module, "_state", fake):
@@ -141,15 +181,20 @@ class TestApiSavedSelections(unittest.TestCase):
                                  json={"text": "Nouveau"})
         self.assertEqual(r.status_code, 200)
         self.assertEqual(len(fake.session_state.data["saved_selections"]), 2)
+
+    # ============ DELETE ============
+
     def test_delete_no_session(self):
         with patch.object(self.app_module, "_state", None):
             r = self.client.delete("/api/saved_selections/sel_xyz")
         self.assertEqual(r.status_code, 409)
+
     def test_delete_unknown(self):
         fake = _make_fake_state([{"id": "sel_a", "text": "x", "role": "claude"}])
         with patch.object(self.app_module, "_state", fake):
             r = self.client.delete("/api/saved_selections/sel_unknown")
         self.assertEqual(r.status_code, 404)
+
     def test_delete_existing(self):
         sels = [
             {"id": "sel_a", "text": "Keep", "role": "claude"},
@@ -162,5 +207,7 @@ class TestApiSavedSelections(unittest.TestCase):
         remaining = fake.session_state.data["saved_selections"]
         self.assertEqual(len(remaining), 1)
         self.assertEqual(remaining[0]["id"], "sel_a")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

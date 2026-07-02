@@ -82,7 +82,7 @@ Une 5ᵉ source possible, parallèle à Sujet libre : **donner cours à partir d
 - **Marker `[WORKSPACE_FOCUS : <subdir>]`** si tu as rempli le sous-dossier de focus.
 - **Résumé auto du workspace (≤ 50 k chars)** :
   - Arbre depth 3 (cap 20% du budget chars) avec les excludes appliqués.
-  - Lecture intégrale des fichiers-pivots détectés : `README.md`, `CLAUDE.md`, `AGENTS.md`, `ARCHITECTURE.md`, `CHANGELOG.md`, `pyproject.toml`, `package.json`, `Cargo.toml`, `Dockerfile`, `.github/-instructions.md`, etc. (cap 8 k bytes par fichier).
+  - Lecture intégrale des fichiers-pivots détectés : `README.md`, `CLAUDE.md`, `AGENTS.md`, `ARCHITECTURE.md`, `CHANGELOG.md`, `pyproject.toml`, `package.json`, `Cargo.toml`, `Dockerfile`, `.github/copilot-instructions.md`, etc. (cap 8 k bytes par fichier).
 - **Outils FS pour explorer pendant la séance** : `Read`, `Grep`, `Glob` scopés au workspace. Le tuteur peut donc piocher dans le code au-delà du résumé pour ancrer ses explications. **Phase A.12** : ces outils fonctionnent désormais sur **les 5 moteurs** : nativement via la CLI Claude Code (`cli_subscription`), et via une vraie boucle de function-calling sur les 4 moteurs API (`gemini_api`, `api_anthropic`, `deepseek_api`, `groq_api`). Avant, sur un moteur API le tuteur n'avait aucun canal d'outil et **hallucinait le contenu des fichiers** (cf. CHANGELOG Phase A.12). `Read` gère le texte, le code et les PDF/images (ingérés directement par Gemini et Claude ; DeepSeek/Groq étant text-only, un PDF y renvoie un message honnête). Chaque appel d'outil affiche une **puce animée « 🔍 Lecture de `fichier` »** dans le fil : tu vois le tuteur consulter le dossier en direct, comme dans Claude Code, au lieu d'un bloc de texte opaque (Phase A.12).
 
 #### Les 3 postures (sélectionnées par le tuteur au 1ᵉʳ tour selon ton cadrage)
@@ -242,6 +242,8 @@ Pour activer la bannière : sélectionne un mot dans une carte cahier crème →
 Position dans la sidebar (depuis A.10.23) : entre 📌 Consignes et 💬 Historique, pas tout à la fin.
 
 **Depuis A.10.27** : 9ᵉ ligne dans le panneau = **surligneur 💾 Notes save** (orange par défaut). Cette couleur n'apparaît PAS dans les cartes cahier : elle marque les sélections sauvegardées via 💾 Save **n'importe où dans le dialogue** (pas seulement dans une carte cahier). Changée de jaune→orange pour éviter la confusion avec le surligneur jaune cahier (formule vitale).
+
+
 
 Si la doctrine ne te convient pas (ex : tu trouves le rouge trop sombre, tu veux le bleu plus saturé, tu préfères du orange pour les pièges au lieu du rose), l'**onglet 🎨 Couleurs** dans la sidebar te laisse remapper chaque rôle :
 

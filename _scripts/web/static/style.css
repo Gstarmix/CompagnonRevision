@@ -1,16 +1,32 @@
+/* Compagnon de révision (Phase A). Pas de framework, dark mode confortable
+   pour les sessions de révision de 45-60 minutes. */
+
+/* Palette harmonisée avec l'application Cartable (2026-07-02) : même nuit
+   bleutée et même accent ambre, pour que les deux logiciels forment une seule
+   expérience. Seules ces variables changent, aucune règle n'est retouchée. */
 :root {
-  --bg: #1c1f24;
-  --bg-elev: #262a31;
-  --fg: #e6e6e6;
-  --fg-dim: #9aa0a6;
-  --accent: #7eb6ff;
+  --bg: #0f1319;
+  --bg-elev: #161c26;
+  --fg: #e8ecf2;
+  --fg-dim: #9aa7b8;
+  --accent: #e8b04b;
   --warn: #ffb454;
-  --err: #ff6e6e;
-  --student: #b6e3a8;
-  --claude: #cdd9ff;
+  --err: #e57373;
+  --student: #9fd8ae;
+  --claude: #d9e2f2;
 }
+
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
+
+/* ============================================================ Tooltip global
+   Phase A.10.15 (2026-05-14) : système custom qui remplace les tooltips
+   natifs ternes du browser pour TOUS les éléments avec `title=`. Le JS
+   hijack au load + MutationObserver `title` → `data-tooltip`, supprime
+   l'attribut natif, et délègue mouseover/mouseout à un container global
+   #global-tooltip positionné via getBoundingClientRect. Auto-position
+   (au-dessus par défaut, en-dessous si pas de place), clamp dans la
+   fenêtre, fade-in 350ms delay. Cache au scroll/wheel/click. */
 #global-tooltip {
   position: fixed;
   z-index: 20000;
@@ -42,6 +58,7 @@ html, body { height: 100%; margin: 0; }
   opacity: 0;
   transform: translateY(-2px);
 }
+/* Petite flèche pointant vers l'élément quand tooltip au-dessus / dessous. */
 #global-tooltip.gt-above::after {
   content: "";
   position: absolute;
@@ -67,12 +84,14 @@ body {
   font-size: 15px;
   line-height: 1.5;
 }
+
 .layout {
   display: grid;
   grid-template-columns: 1fr 320px;
   height: 100vh;
   overflow: hidden;
 }
+
 main#dialogue {
   display: flex;
   flex-direction: column;
@@ -80,6 +99,7 @@ main#dialogue {
   min-width: 0;
   min-height: 0;
 }
+
 #dialogue-header { padding: 10px 14px; background: var(--bg-elev); border-bottom: 1px solid #333; }
 #start-form { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
 #start-form input { background: var(--bg); color: var(--fg); border: 1px solid #444; padding: 4px 6px; border-radius: 3px; }
@@ -99,9 +119,15 @@ main#dialogue {
 }
 #start-form #form-rescan:hover { background: rgba(255, 255, 255, 0.12); color: var(--fg); border-color: var(--accent); }
 #session-info { color: var(--fg-dim); font-size: 13px; margin-left: 8px; }
+
 #dialogue-stream {
   flex: 1;
   overflow-y: auto;
+  /* Phase A.10.10 : padding asymétrique : moins à droite pour
+     rapprocher les bulles du scrollbar (sinon vide visible entre la
+     fin de la card et la track), respiration conservée à gauche.
+     Le scrollbar prend 10px (6px visible + 2×2px clip transparent),
+     donc 10px de padding-right suffit pour qu'il "longe" la bulle. */
   padding: 16px 10px 16px 24px;
   scroll-behavior: smooth;
 }
@@ -110,6 +136,8 @@ main#dialogue {
 #dialogue-stream .turn.student { background: rgba(126,182,255,0.06); border-left: 3px solid var(--student); }
 #dialogue-stream .turn.claude { background: rgba(205,217,255,0.05); border-left: 3px solid var(--claude); }
 #dialogue-stream .turn .role { font-size: 12px; color: var(--fg-dim); margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+/* Bulles système (notifications du backend / actions UI internes ; Phase v15) */
 #dialogue-stream .turn.system {
   background: rgba(126, 182, 255, 0.10);
   border-left: 3px solid var(--accent);
@@ -126,6 +154,9 @@ main#dialogue {
   display: none;
 }
 #dialogue-stream .turn.system:hover .turn-actions { display: inline-flex; }
+
+/* Phase A.9 : bouton inline « 📂 Ouvrir dans Docs » sous les bulles
+   système de création de doc (PDF d'énoncé inventé, etc.). */
 #dialogue-stream .turn.system .doc-link-btn {
   margin-top: 6px;
   display: inline-block;
@@ -142,6 +173,10 @@ main#dialogue {
 #dialogue-stream .turn.system .doc-link-btn:hover {
   filter: brightness(1.15);
 }
+
+/* Phase A.9 : état « loading » des bulles système (génération PDF en
+   cours). Pulse douce sur le fond + animation des "…" pour rendre
+   l'attente visuellement vivante (le rendu PDF prend 1-5 s). */
 @keyframes turn-loading-pulse {
   0%, 100% { background: rgba(126, 182, 255, 0.10); }
   50%      { background: rgba(126, 182, 255, 0.22); }
@@ -155,6 +190,11 @@ main#dialogue {
   font-style: normal;
   margin-left: 4px;
 }
+
+/* Flash visuel sur le sélecteur de moteur (Phase v15.6.4), joué quand
+   le rewrite ou le stream tombe sur un quota/solde épuisé et qu'on a
+   demandé à l'utilisateur d'aller changer de moteur. 3 pulses oranges
+   sur 1.8s, déclenché par classList.add("flash-attention"). */
 @keyframes flash-attention-pulse {
   0%, 100% {
     box-shadow: 0 0 0 0 rgba(255, 167, 38, 0);
@@ -171,6 +211,12 @@ main#dialogue {
   outline-offset: 2px;
   border-radius: 3px;
 }
+
+/* Bulle "💡 Exercice voisin" (Phase Z.8.4) : résultat de
+   /api/find_similar_exo. Distincte des bulles standard pour rappeler
+   visuellement que c'est isolé de la conv principale (le tuteur de la
+   colle ne voit pas cet exo). Bordure jaune-orange + fond légèrement
+   teinté + label own.. */
 #dialogue-stream .turn.system.found-exo-bubble {
   background: rgba(255, 167, 38, 0.06);
   border-left: 3px solid rgba(255, 167, 38, 0.55);
@@ -222,6 +268,11 @@ main#dialogue {
 #dialogue-stream .turn.system.found-exo-bubble .found-exo-copy:hover {
   background: #2a2a2a; color: var(--fg);
 }
+
+/* Boutons « 📄 Voir l'énoncé / ✅ Voir le corrigé » dans la bulle exo
+   voisin (Phase Z.8.8). Liens stylés en chip, ouvrent le PDF dans un
+   nouvel onglet via /api/cours_file. Helper _makeOpenFileBtn factorisé
+   pour réutilisation par les futurs boutons (recherche internet, CM…). */
 #dialogue-stream .turn.system.found-exo-bubble .found-exo-files {
   display: flex;
   flex-wrap: wrap;
@@ -247,6 +298,10 @@ main#dialogue {
   border-color: rgba(255, 167, 38, 0.65);
   color: #fff;
 }
+
+/* Phase Z.9 : actions « pas satisfait, autre chose ? » dans bulles exo
+   voisin / web / youtube / cm. Compactes, alignées en row, séparées du
+   contenu principal par une marge. */
 #dialogue-stream .turn.system.found-exo-bubble .found-exo-alts {
   display: flex;
   flex-wrap: wrap;
@@ -281,6 +336,9 @@ main#dialogue {
 #dialogue-stream .turn.system.found-exo-bubble .found-exo-alt-btn:disabled {
   opacity: 0.4; cursor: wait;
 }
+
+/* Variantes par type de bulle : colorations distinctes pour la barre
+   gauche et le label header (web = bleu, vidéo = rouge, cm = vert). */
 #dialogue-stream .turn.system.found-web-bubble {
   background: rgba(98, 168, 255, 0.06);
   border-left-color: rgba(98, 168, 255, 0.55);
@@ -293,6 +351,7 @@ main#dialogue {
   background: rgba(98, 168, 255, 0.12);
   border-color: rgba(98, 168, 255, 0.5);
 }
+
 #dialogue-stream .turn.system.found-video-bubble {
   background: rgba(231, 76, 60, 0.06);
   border-left-color: rgba(231, 76, 60, 0.55);
@@ -305,11 +364,17 @@ main#dialogue {
   background: rgba(231, 76, 60, 0.12);
   border-color: rgba(231, 76, 60, 0.5);
 }
+
 #dialogue-stream .turn.system.found-cm-bubble {
   background: rgba(46, 204, 113, 0.06);
   border-left-color: rgba(46, 204, 113, 0.55);
 }
 #dialogue-stream .turn.system.found-cm-bubble .role { color: rgba(46, 204, 113, 0.95); }
+
+/* Phase Z.9.5 : input éditable + bouton "Chercher directement" pour
+   fallback manuel sur Google/YouTube (toujours plus fiable que les
+   hallucinations LLM). Apparaît dans les bulles web/yt résultats ET
+   dans les bulles d'erreur. */
 #dialogue-stream .turn.system.found-exo-bubble .found-search-query {
   display: flex;
   flex-wrap: wrap;
@@ -355,6 +420,10 @@ main#dialogue {
   border-color: rgba(98, 168, 255, 0.70);
   color: #fff;
 }
+
+/* Phase v15.7.14 : Bouton 🔄 Reformuler à côté de l'input « Édite la query ».
+   Re-call /api/refine_search_query avec exclude=[query courante, alts]
+   pour obtenir un autre angle. */
 #dialogue-stream .turn.system.found-exo-bubble .found-exo-reformulate-btn {
   padding: 4px 8px;
   font-size: 12px;
@@ -376,6 +445,10 @@ main#dialogue {
   opacity: 0.5;
   cursor: wait;
 }
+
+/* Phase v15.7.14 : marker ✨ qui apparaît quand la query a été raffinée
+   par Gemini Flash (vs heuristique JS). Visible dans le label « Édite la
+   query ✨ : ». Hidden par défaut, montré quand refinedData arrive. */
 #dialogue-stream .turn.system.found-exo-bubble .found-search-query .refined-marker {
   color: rgba(255, 170, 80, 0.95);
   font-size: 12px;
@@ -385,6 +458,8 @@ main#dialogue {
 #dialogue-stream .turn.system.found-exo-bubble .found-search-query .refined-marker[hidden] {
   display: none;
 }
+
+/* Liste des résultats web/youtube */
 #dialogue-stream .turn.system.found-exo-bubble .found-web-list {
   display: flex;
   flex-direction: column;
@@ -417,6 +492,17 @@ main#dialogue {
   font-style: italic;
   margin-top: 4px;
 }
+
+/* Phase v15.7.30.1 : règles `#colle-format-chips` / `.colle-format-chip`
+   / `#corrige-anchor-chips` / `.corrige-anchor-chip` supprimées : les
+   bandeaux ont été retirés (redondants avec les `<select>` du form).
+   Les selects du dialogue-header servent désormais de contrôles vivants
+   (POST /api/set_*** sur `change` si session active). Les markers
+   inline `.format-marker` et `.anchor-marker` restent. */
+
+/* Phase v15.7.30 : marker système quand l'ancrage corrigé bascule en
+   cours de séance (chip click ou slash-command). Teinte mauve pour
+   le distinguer du format-marker orange. */
 #dialogue-stream .anchor-marker {
   display: inline-flex;
   align-items: center;
@@ -436,6 +522,10 @@ main#dialogue {
   color: var(--fg);
   font-weight: 600;
 }
+
+/* Phase v15.7.4 : marker système quand format colle bascule en cours
+   de séance (chip click ou slash-command /oral|/photos|/mixte).
+   Style proche du doc-marker mais teinté orange pour le distinguer. */
 #dialogue-stream .format-marker {
   display: inline-flex;
   align-items: center;
@@ -455,6 +545,9 @@ main#dialogue {
   color: var(--fg);
   font-weight: 600;
 }
+
+/* Phase v15.7.23 : Mini-popup flottant qui apparaît au-dessus de la
+   sélection de texte dans une bulle (claude ou student). 4 actions. */
 #selection-toolbar {
   position: absolute;
   z-index: 1500;
@@ -480,6 +573,8 @@ main#dialogue {
 #selection-toolbar button:hover {
   background: rgba(126, 182, 255, 0.18);
 }
+
+/* Phase v15.7.23 : Toast feedback bref après une action save/copy. */
 .selection-toast {
   position: fixed;
   top: 20px; left: 50%;
@@ -499,6 +594,9 @@ main#dialogue {
   85% { opacity: 1; transform: translate(-50%, 0); }
   100% { opacity: 0; transform: translate(-50%, -10px); }
 }
+
+/* Phase v15.7.23 : Highlight bref de la bulle source quand on clique
+   sur une note depuis l'onglet 🔖 Notes. */
 #dialogue-stream .turn.note-highlight {
   animation: note-highlight-pulse 2.5s ease-out;
 }
@@ -507,6 +605,8 @@ main#dialogue {
   20%  { background: rgba(255, 230, 100, 0.25); }
   100% { background: rgba(255, 230, 100, 0); }
 }
+
+/* Phase v15.7.23 : Onglet sidebar 🔖 Notes : header + liste */
 #notes-header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 14px;
@@ -571,6 +671,11 @@ main#dialogue {
 .note-actions button:hover {
   color: var(--fg); border-color: #666;
 }
+
+/* Phase A.9.1 : Onglet sidebar 📸 Photos : header + grille de vignettes
+   auto-archivées depuis les envois de photos pendant la séance. Click sur
+   une vignette = lightbox (réutilise #lightbox), 🗑 = retire l'entrée
+   de la galerie. */
 #photos-header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 14px;
@@ -656,6 +761,10 @@ main#dialogue {
 }
 .photo-card:hover .photo-del-btn { opacity: 1; }
 .photo-del-btn:hover { background: rgba(180, 40, 40, 0.85); }
+
+/* Phase A.10.5 : Onglet 🎓 Astuces (coach marks). Liste curated
+   d'astuces avec bouton « Voir où » qui déclenche un effet visuel
+   (spotlight) sur l'élément concerné. */
 #tips-header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 14px;
@@ -702,6 +811,10 @@ main#dialogue {
   background: rgba(126, 182, 255, 0.18);
   color: var(--fg);
 }
+
+/* Spotlight global pour les coach marks, appliqué à tout élément ciblé.
+   Outline jaune scintillant + box-shadow + scroll-into-view (JS). Auto
+   retiré après ~3 s via la classe ajoutée/retirée par _spotlight(). */
 .spotlight-target {
   position: relative;
   z-index: 100;
@@ -719,6 +832,8 @@ main#dialogue {
     outline: 2px solid rgba(255, 220, 80, 0.9);
   }
 }
+
+/* Phase A.10 : Onglet sidebar 📌 Consignes (mémoire persistante de séance) */
 #stickies-header {
   display: flex; align-items: center; justify-content: space-between;
   padding: 10px 14px;
@@ -806,6 +921,8 @@ main#dialogue {
 }
 .sticky-toggle { min-width: 76px; }
 .sticky-card.sticky-disabled .sticky-toggle { color: var(--fg-dim); }
+
+/* Chip 📌 sur les bulles student (hover-only) */
 .turn.student {
   position: relative;
 }
@@ -825,6 +942,8 @@ main#dialogue {
 }
 .turn.student:hover .sticky-pin-chip { opacity: 1; }
 .sticky-pin-chip:hover { background: rgba(255, 200, 80, 0.85); color: #000; }
+
+/* Modal d'import de consignes */
 #stickies-import-modal {
   position: fixed; inset: 0;
   background: rgba(0, 0, 0, 0.55);
@@ -941,6 +1060,13 @@ main#dialogue {
   border-color: rgba(255, 200, 80, 0.6);
 }
 .sim-btn-primary:hover { background: rgba(255, 200, 80, 0.35); }
+
+/* Phase v15.7.26 → A.10.27 : Highlight persistant des sélections
+   sauvegardées dans la bulle source. Couleur par défaut : ORANGE (au
+   lieu de jaune historique pour ne pas conflit avec surligneur jaune
+   du cahier). Configurable via onglet 🎨 Couleurs cahier.
+   User : « mets une autre couleur que ceux existant genre orange par ex,
+   de base il est jaune ». */
 mark.saved-note-mark {
   background: rgba(var(--note-saved-hl), 0.40);
   color: inherit;
@@ -948,6 +1074,8 @@ mark.saved-note-mark {
   border-radius: 2px;
   border-bottom: 1px dashed rgba(var(--note-saved-hl), 0.75);
 }
+
+/* Phase v15.7.21 : Bouton Send qui devient ⏹ Annuler pendant stream. */
 #send-btn.cancel-mode {
   background: var(--err, #ff6e6e);
   color: #fff;
@@ -957,6 +1085,9 @@ mark.saved-note-mark {
   0%, 100% { opacity: 1; }
   50%      { opacity: 0.75; }
 }
+
+/* Phase v15.7.21 : Modal d'annulation du stream Compagnon.
+   3 options : Reprendre / Supprimer / Retour. */
 #cancel-stream-modal.modal-overlay {
   position: fixed; inset: 0;
   background: rgba(0, 0, 0, 0.65);
@@ -1016,6 +1147,11 @@ mark.saved-note-mark {
   background: rgba(255, 255, 255, 0.04);
   color: var(--fg);
 }
+
+/* Phase v15.7.20 : Bloc OCR Gemini Flash collapsible sous bulle student.
+   Affiché quand /api/send_message renvoie ocr_blocks (mode colle +
+   colle_format ∈ {photos, mixte} + image attachée). Auto-ouvert si
+   warnings ou completeness < 80%. */
 #dialogue-stream .turn .ocr-collapsible {
   margin: 8px 12px 4px;
   padding: 0;
@@ -1030,7 +1166,7 @@ mark.saved-note-mark {
   padding: 6px 10px;
   color: var(--fg-dim, #aaa);
   user-select: none;
-  list-style: revert;
+  list-style: revert;  /* garde le triangle natif */
 }
 #dialogue-stream .turn .ocr-collapsible[open] > summary {
   color: var(--fg);
@@ -1070,6 +1206,10 @@ mark.saved-note-mark {
   color: var(--fg-dim, #888);
   font-style: italic;
 }
+
+/* Marker de position dans le panneau Docs (Phase A.7.2 v15.7).
+   Posé en debounce après une nav, cliquable pour retour. Visuel léger,
+   pas une bulle complète, plutôt une étiquette inline-block. */
 #dialogue-stream .doc-marker {
   display: inline-flex;
   align-items: center;
@@ -1105,6 +1245,8 @@ mark.saved-note-mark {
   opacity: 0.55;
 }
 #dialogue-stream .doc-marker:hover .doc-marker-hint { opacity: 0.9; }
+
+/* Actions sur chaque bulle student/claude (Phase A.7.2 v9) : ✏ éditer, 🗑 supprimer */
 #dialogue-stream .turn { position: relative; }
 #dialogue-stream .turn .turn-actions {
   position: absolute;
@@ -1131,6 +1273,8 @@ mark.saved-note-mark {
 #dialogue-stream .turn .turn-copy-btn:hover { background: rgba(255,255,255,0.18); color: var(--fg); }
 #dialogue-stream .turn .turn-copy-btn.copied { background: var(--accent); color: #111; }
 #dialogue-stream .turn .turn-copy-btn.copy-err { background: var(--err); color: #fff; }
+
+/* Mini-player TTS (Phase A.7.2 v14), sous chaque bulle Compagnon */
 #dialogue-stream .turn.claude .tts-player {
   display: flex;
   flex-wrap: wrap;
@@ -1200,6 +1344,8 @@ mark.saved-note-mark {
   flex: 0 0 auto;
 }
 #dialogue-stream .turn.claude .tts-close:hover { color: var(--err); }
+
+/* Flag « (modifié) » à côté du label de role */
 #dialogue-stream .turn .turn-edited-flag {
   font-size: 10px;
   font-style: italic;
@@ -1208,6 +1354,10 @@ mark.saved-note-mark {
   text-transform: none;
   letter-spacing: 0;
 }
+
+/* Timestamp discret à droite du label de role (Phase Z.8.2).
+   Petit, opaque, sans transformation, aligné à droite via margin-left:auto.
+   Le `.role` div est en flex pour que ça pousse le timestamp à droite. */
 #dialogue-stream .turn .role {
   display: flex;
   align-items: baseline;
@@ -1228,7 +1378,11 @@ mark.saved-note-mark {
   transition: opacity 0.15s;
 }
 #dialogue-stream .turn:hover .turn-time { opacity: 0.85; }
+/* Sur les bulles markers (transitions slide), pas de timestamp visible
+   (déjà visuellement chargées avec leur propre format). */
 #dialogue-stream .turn.marker .turn-time { display: none; }
+
+/* Zone d'édition inline */
 #dialogue-stream .turn-edit-area {
   margin-top: 4px;
   display: flex;
@@ -1283,7 +1437,7 @@ mark.saved-note-mark {
   color: var(--fg);
   border: 1px solid #444 !important;
   padding: 4px 10px !important;
-  margin-right: auto;
+  margin-right: auto;  /* pousse les autres à droite */
 }
 #dialogue-stream .turn-edit-attach:hover { background: rgba(255,255,255,0.12); border-color: var(--accent) !important; }
 #dialogue-stream .turn-edit-reload {
@@ -1292,6 +1446,8 @@ mark.saved-note-mark {
 }
 #dialogue-stream .turn-edit-reload:hover:not(:disabled) { background: #c8edb8; }
 #dialogue-stream .turn-edit-reload:disabled { opacity: 0.4; cursor: wait; }
+
+/* Navigation entre branches frères (style ChatGPT) : flèches < N/M > */
 #dialogue-stream .turn-branch-nav {
   display: inline-flex;
   align-items: center;
@@ -1326,6 +1482,8 @@ mark.saved-note-mark {
   min-width: 28px;
   text-align: center;
 }
+
+/* Markdown rendering (Phase A.7.2 v3), appliqué sur les bulles claude. */
 #dialogue-stream .turn p { margin: 0.4em 0; }
 #dialogue-stream .turn p:first-child { margin-top: 0; }
 #dialogue-stream .turn p:last-child { margin-bottom: 0; }
@@ -1350,6 +1508,8 @@ mark.saved-note-mark {
   margin: 0.5em 0;
 }
 #dialogue-stream .turn pre code { background: transparent; padding: 0; }
+
+/* Titres ATX et blockquotes (Phase A.7.2 v15.6.2), rendus par renderMarkdown. */
 #dialogue-stream .turn h1,
 #dialogue-stream .turn h2,
 #dialogue-stream .turn h3,
@@ -1375,6 +1535,11 @@ mark.saved-note-mark {
   font-style: italic;
   border-radius: 0 3px 3px 0;
 }
+/* Phase A.10.16 : spacing serré DANS les blockquotes. Sans ça,
+   les cartes-cahier Gemini (« > **Exemple :**\n> - item ») avaient
+   `<p>` + `<ul>` séparés par 0.4em chacun + margin collapse = ~6-7px
+   de gap visuel entre l'intro et la liste. User : « la liste est en
+   dehors de la ligne de texte et y'a un saut de ligne ». */
 #dialogue-stream .turn blockquote > p { margin: 0.25em 0; }
 #dialogue-stream .turn blockquote > p:first-child { margin-top: 0; }
 #dialogue-stream .turn blockquote > p:last-child { margin-bottom: 0; }
@@ -1385,18 +1550,36 @@ mark.saved-note-mark {
 }
 #dialogue-stream .turn blockquote > p + ul,
 #dialogue-stream .turn blockquote > p + ol { margin-top: 0; }
+
+/* ============================================================ Cahier card (Phase A.10.19) */
+/* Artefact « feuille blanche » émis par le tuteur aux moments « notez ceci
+   sur votre cahier ». L'idée : visuellement c'est UNE FEUILLE de cahier
+   posée sur le chat, pas un blockquote dans le thème bleu sombre. Fond
+   crème, lignes Seyès discrètes, marge rouge stylo à gauche.
+
+   Doctrine couleurs (audit photos cahier réel du user 2026-05-15) :
+   - **Stylo bleu = défaut** (~60% du texte, prose courante)
+   - Stylo rouge = concepts/résultats à retenir (1-3/carte)
+   - Stylo vert = exemples concrets / valeurs (parcimonieux)
+   - Stylo noir = code à recopier (bloc fenced, jamais surligné)
+   - Surligneur vert = titre de fiche (1 fois en haut)
+   - Surligneur violet = sous-titre section numérotée (1 fois)
+   - Surligneur jaune = formule vitale à mémoriser (0-1 par carte)
+   - Surligneur rose = piège / erreur classique (0-1 par carte)
+   Anti-sapin-de-Noël : max 2 surligneurs ponctuels par carte. */
 #dialogue-stream .turn .cahier-card {
-  background: #fefef2;
-  color: var(--cahier-c-bleu);
-  border: 1px solid #d6cfa9;
-  border-left: 4px solid var(--cahier-c-rouge);
+  background: #fefef2;                /* crème papier */
+  color: var(--cahier-c-bleu);        /* bleu stylo = défaut */
+  border: 1px solid #d6cfa9;          /* tranche papier */
+  border-left: 4px solid var(--cahier-c-rouge);  /* marge stylo rouge à gauche */
   border-radius: 4px;
   padding: 14px 18px 16px 26px;
   margin: 12px 0;
-  font-style: normal;
+  font-style: normal;                 /* annule le italic blockquote hérité */
   font-size: 0.96em;
   line-height: 1.55;
   box-shadow: 0 2px 6px rgba(0,0,0,0.25);
+  /* Lignes horizontales très subtiles, style cahier ligné */
   background-image: linear-gradient(
     to bottom,
     transparent 0,
@@ -1410,18 +1593,23 @@ mark.saved-note-mark {
 #dialogue-stream .turn .cahier-titre {
   font-weight: 700;
   font-size: 1.08em;
-  color: var(--cahier-c-bleu);
+  color: var(--cahier-c-bleu);        /* bleu stylo (même que body) */
   margin: 0 0 10px;
   padding: 2px 6px 4px;
+  /* Surligneur violet par défaut sur le sous-titre (convention cahier). */
   background: rgba(var(--cahier-hl-violet), 0.60);
   border-radius: 2px;
-  display: inline-block;
+  display: inline-block;              /* le hl ne s'étend pas à toute la largeur */
   letter-spacing: 0.2px;
 }
+/* Phase A.10.30 : titre NON numéroté = sous-titre → surligneur VERT (au lieu
+   du violet, réservé aux vraies sections numérotées « 8. … », « 11. … »). */
 #dialogue-stream .turn .cahier-titre.cahier-titre-vert {
   background: rgba(var(--cahier-hl-vert), 0.60);
 }
 #dialogue-stream .turn .cahier-body { color: var(--cahier-c-bleu); }
+/* Phase A.10.30 : titres markdown (## / ###) dans le corps : ramenés à une
+   taille de sous-titre (le <mark.cahier-hl-vert> interne pose le surligneur). */
 #dialogue-stream .turn .cahier-body :is(h1, h2, h3, h4, h5, h6) {
   font-size: 1.02em;
   font-weight: 700;
@@ -1439,6 +1627,7 @@ mark.saved-note-mark {
 #dialogue-stream .turn .cahier-body ul,
 #dialogue-stream .turn .cahier-body ol { margin: 0.3em 0; padding-left: 1.5em; color: inherit; }
 #dialogue-stream .turn .cahier-body li { margin: 0.1em 0; color: inherit; }
+/* Code inline : conserve la couleur du contexte (rouge/vert si surchargé) */
 #dialogue-stream .turn .cahier-body code {
   background: rgba(0, 30, 80, 0.06);
   color: inherit;
@@ -1447,37 +1636,55 @@ mark.saved-note-mark {
   border-radius: 3px;
   font-size: 0.92em;
 }
+/* Bloc code (fenced ``` ```) : VERT par convention (= exemple écrit à
+   recopier, cohérent avec doctrine « vert = exemples concrets »).
+   Commentaires (lignes `-- ...`, `# ...`, `// ...`) en ROUGE via le
+   span `.cahier-code-comment` (post-process JS dans _renderCahierBlock).
+   User : « je préfère code en vert et commentaires en rouge ». */
 #dialogue-stream .turn .cahier-body pre {
   background: rgba(0, 80, 0, 0.04);
   border: 1px solid rgba(0, 80, 0, 0.10);
   border-radius: 3px;
   padding: 6px 10px;
-  color: var(--cahier-c-vert);
+  color: var(--cahier-c-vert);        /* stylo vert (code) */
 }
 #dialogue-stream .turn .cahier-body pre code {
   background: transparent;
   border: none;
   padding: 0;
-  color: inherit;
+  color: inherit;                     /* hérite vert du pre */
 }
 #dialogue-stream .turn .cahier-body .cahier-code-comment {
-  color: var(--cahier-c-rouge);
+  color: var(--cahier-c-rouge);       /* stylo rouge (commentaire) */
   font-style: italic;
 }
+/* Phase A.10.20 → A.10.26 : `code inline` auto-classifié :
+   - .cahier-code-inline : nom/concept (charToBase, BinTree, Maybe) → rouge.
+   - .cahier-code-inline-value : valeur/exemple ("ATGC", [A,T,G,C], 42) → vert.
+   Heuristique JS : guillemets / brackets / chiffres-only → value (vert),
+   sinon → name (rouge). User : « je ne veux pas du scénario pas intelligible ».
+   PAS de monospace dans les 2 cas : sur papier on écrit juste le mot,
+   c'est la couleur qui distingue. */
 #dialogue-stream .turn .cahier-body .cahier-code-inline {
-  color: var(--cahier-c-rouge);
+  color: var(--cahier-c-rouge);       /* stylo rouge (nom/concept) */
   font-family: inherit;
   background: transparent;
   border: none;
   padding: 0;
 }
 #dialogue-stream .turn .cahier-body .cahier-code-inline-value {
-  color: var(--cahier-c-vert);
+  color: var(--cahier-c-vert);        /* stylo vert (valeur/exemple) */
   font-family: inherit;
   background: transparent;
   border: none;
   padding: 0;
 }
+
+/* Phase A.10.20 : boutons couleur dans la selection-toolbar.
+   Visibles uniquement quand sélection dans `.cahier-card` (toggle JS). */
+/* Phase A.10.22 : bouton « 🎨 Colorier » unifié dans selection-toolbar.
+   Apparaît UNIQUEMENT si sélection dans .cahier-card, ouvre l'onglet
+   Couleurs où la sélection devient cliquable. */
 #selection-toolbar .cahier-toolbar-open {
   background: rgba(196, 181, 253, 0.20);
   border: 1px solid rgba(196, 181, 253, 0.40);
@@ -1488,9 +1695,13 @@ mark.saved-note-mark {
   background: rgba(196, 181, 253, 0.35);
 }
 #selection-toolbar .cahier-toolbar-open[hidden] { display: none; }
+
+/* Phase A.10.20 : tip body multi-paragraphes (renderTipsList) */
 .tip-body-para { margin: 0.35em 0; }
 .tip-body-para:first-child { margin-top: 0; }
 .tip-body-para:last-child { margin-bottom: 0; }
+
+/* Phase A.10.21 : onglet 🎨 Couleurs cahier (remap retroactif via CSS vars) */
 #colors-header { padding: 8px 12px 4px; }
 #colors-header h2 { margin: 0 0 6px; font-size: 1.05em; }
 .colors-desc {
@@ -1547,6 +1758,8 @@ mark.saved-note-mark {
 #colors-reset-btn:hover {
   background: rgba(255,255,255,0.12);
 }
+
+/* Phase A.10.22 : bannière sélection active dans onglet 🎨 Couleurs */
 .colors-selection-banner {
   background: rgba(196, 181, 253, 0.15);
   border: 1px solid rgba(196, 181, 253, 0.40);
@@ -1577,6 +1790,8 @@ mark.saved-note-mark {
 .colors-selection-clear:hover {
   background: rgba(255,255,255,0.12);
 }
+
+/* Quand sélection active, les rows sont "interactives" (hover) */
 .colors-row-selectable:hover {
   background: rgba(255,255,255,0.04);
   cursor: pointer;
@@ -1589,23 +1804,40 @@ mark.saved-note-mark {
   transform: scale(1.15);
   border-color: rgba(255,255,255,0.50);
 }
+/* Phase A.10.29 : KaTeX dans la feuille : TOUJOURS en noir (stylo `noir`),
+   quel que soit le span englobant. Donne un rôle au noir, jusqu'ici inutilisé
+   (le code fenced est passé au vert en A.10.20). La règle cible `.katex`
+   directement → bat la couleur héritée d'un éventuel `{rouge}`/`{vert}`.
+   Phase A.10.30 : portée `.cahier-card` (et plus `.cahier-body`) pour couvrir
+   aussi les formules d'un titre de carte. Configurable via 🎨 Couleurs. */
 #dialogue-stream .turn .cahier-card .katex { color: var(--cahier-c-noir); }
 #dialogue-stream .turn .cahier-card .katex-display { margin: 0.4em 0; }
+
+/* Phase A.10.21 : Couleurs cahier via CSS variables. Permet à l'onglet
+   🎨 Couleurs de remapper rétroactivement TOUTES les cartes existantes
+   en une assignation JS (`setProperty('--cahier-c-rouge', '#xxx')`).
+   Valeurs par défaut alignées sur audit du cahier réel user 2026-05-15. */
 :root {
-  --cahier-c-bleu:  #1d4ed8;
-  --cahier-c-rouge: #b91c1c;
-  --cahier-c-vert:  #15803d;
-  --cahier-c-noir:  #111111;
-  --cahier-hl-jaune:  253, 224, 71;
+  --cahier-c-bleu:  #1d4ed8;          /* bleu Bic (=défaut prose) */
+  --cahier-c-rouge: #b91c1c;          /* rouge Bic (concept à retenir) */
+  --cahier-c-vert:  #15803d;          /* vert Bic (exemples + code blocs) */
+  --cahier-c-noir:  #111111;          /* noir Bic (neutre) */
+  --cahier-hl-jaune:  253, 224, 71;   /* triplet RGB (alpha appliqué inline) */
   --cahier-hl-vert:   134, 239, 172;
   --cahier-hl-rose:   249, 168, 212;
   --cahier-hl-violet: 196, 181, 253;
-  --note-saved-hl:    251, 146, 60;
+  /* Phase A.10.27 : surligneur note save (orange par défaut, configurable). */
+  --note-saved-hl:    251, 146, 60;   /* orange clair, distinct du jaune cahier */
 }
+
+/* Stylos : palette Bic 4-couleurs. Override couleur héritée du parent. */
 #dialogue-stream .turn .cahier-c-bleu  { color: var(--cahier-c-bleu); }
 #dialogue-stream .turn .cahier-c-rouge { color: var(--cahier-c-rouge); }
 #dialogue-stream .turn .cahier-c-vert  { color: var(--cahier-c-vert); }
 #dialogue-stream .turn .cahier-c-noir  { color: var(--cahier-c-noir); }
+
+/* Surligneurs : semi-transparents, tons papeterie scolaire. Couleur du
+   texte inchangée (le surligneur enrobe sans masquer). */
 #dialogue-stream .turn .cahier-hl-jaune  {
   background: rgba(var(--cahier-hl-jaune), 0.55);
   color: inherit; padding: 0 2px; border-radius: 2px;
@@ -1622,6 +1854,8 @@ mark.saved-note-mark {
   background: rgba(var(--cahier-hl-violet), 0.60);
   color: inherit; padding: 0 2px; border-radius: 2px;
 }
+
+/* Tables GFM (Phase A.7.2 v8), rendues par renderMarkdown. */
 #dialogue-stream .turn table.md-table {
   border-collapse: collapse;
   margin: 8px 0;
@@ -1645,6 +1879,10 @@ mark.saved-note-mark {
 #dialogue-stream .turn table.md-table tr:nth-child(even) td {
   background: rgba(255,255,255,0.02);
 }
+
+/* Images embarquées (Phase A.7.2 v4) : wrapper .md-img-wrap sert de
+   conteneur pour le bouton 🗑 « retirer cette pièce jointe » qui apparaît
+   au hover sur les bulles student. */
 #dialogue-stream .turn .md-img-wrap {
   position: relative;
   display: inline-block;
@@ -1674,7 +1912,11 @@ mark.saved-note-mark {
 }
 #dialogue-stream .turn.student .md-img-wrap:hover .md-img-del { display: inline-flex; }
 #dialogue-stream .turn .md-img-del:hover { background: var(--err); }
+/* Bouton 🗑 caché sur les bulles claude (pas censé retirer une image
+   d'une réponse du tuteur) */
 #dialogue-stream .turn.claude .md-img-del { display: none !important; }
+
+/* Lightbox slide aggrandie (Phase A.7.2 v6.4) */
 #lightbox {
   position: fixed;
   inset: 0;
@@ -1701,6 +1943,8 @@ mark.saved-note-mark {
   color: var(--fg-dim);
   font-style: italic;
 }
+
+/* Indicateur de réflexion entre clic et 1ᵉʳ chunk (Phase A.7.2 v6.3) */
 .thinking-indicator {
   display: inline-block;
   padding: 4px 10px;
@@ -1714,6 +1958,7 @@ mark.saved-note-mark {
   animation: pulse 1.4s infinite;
   transition: background 0.3s, border-color 0.3s, color 0.3s;
 }
+/* Phase v15 : palette adaptative selon durée d'attente (cf. startThinkingIndicator) */
 .thinking-indicator.warn {
   background: rgba(255, 180, 84, 0.15);
   border-color: rgba(255, 180, 84, 0.45);
@@ -1728,6 +1973,8 @@ mark.saved-note-mark {
 .thinking-indicator.err.pulse {
   animation: pulse 0.6s infinite;
 }
+
+/* Card bascule à chaud quota épuisé (Phase A.7.2 v7.3) */
 #dialogue-stream .turn.quota-midflow-card {
   background: rgba(255, 110, 110, 0.10);
   border-left: 3px solid var(--err);
@@ -1778,6 +2025,8 @@ mark.saved-note-mark {
 }
 .quota-midflow-card.qmf-success { border-left-color: var(--student); }
 .quota-midflow-card.qmf-error .qmf-status { color: var(--err); }
+
+/* Banner incohérence SCRIPT ↔ slides PDF (Phase A.7.2 v6) */
 #dialogue-stream .turn.inconsistency-card {
   background: rgba(255, 180, 84, 0.10);
   border-left: 3px solid var(--warn);
@@ -1813,6 +2062,8 @@ mark.saved-note-mark {
 .inconsistency-card .inc-copy:hover {
   background: #ffc46b;
 }
+
+/* Image qui plante (404 / hors COURS_ROOT) (Phase A.7.2 v6) */
 .md-img-broken {
   display: inline-block;
   padding: 6px 10px;
@@ -1830,6 +2081,8 @@ mark.saved-note-mark {
   font-size: 0.95em;
   color: var(--fg);
 }
+
+/* Toolbar de ton (Phase A.7.2 v4), apparaît sous chaque réponse Claude */
 .tone-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -1854,8 +2107,12 @@ mark.saved-note-mark {
   border-color: rgba(255,255,255,0.2);
 }
 .tone-btn:disabled { opacity: 0.4; cursor: wait; }
+
+/* Marker de transition slide : bulle student au format discret pour
+   ne pas polluer la conv (Phase A.7.2 v11+). Distingue visuellement
+   qui a fait la transition : .marker-user (toi) vs .marker-tutor (claude). */
 #dialogue-stream .turn.student.marker {
-  padding: 4px 12px 4px 32px;
+  padding: 4px 12px 4px 32px;  /* place pour l'icône à gauche */
   font-size: 0.85em;
   font-style: italic;
   margin-bottom: 6px;
@@ -1882,6 +2139,11 @@ mark.saved-note-mark {
 #dialogue-stream .turn.student.marker-tutor::before { content: "🤖"; }
 #dialogue-stream .turn.student.marker .role { display: none; }
 #dialogue-stream .turn.student.marker .turn-edited-flag { display: none !important; }
+/* Phase v15 : le 🗑 est autorisé sur les markers (delete + retour slide
+   précédente). Les autres actions (✏, 🔊, branch nav) ne sont pas
+   créées dans le DOM pour les markers (cf. appendTurn). */
+
+/* Chip meta-instruction (« 🎛️ Plus concis »), pas une vraie turn */
 .meta-chip {
   display: inline-block;
   margin: 4px 0 4px 12px;
@@ -1893,6 +2155,8 @@ mark.saved-note-mark {
   color: var(--fg-dim);
   font-style: italic;
 }
+
+/* Phase A.7 lecture : suggestion d'édition */
 #dialogue-stream .turn.suggested-edit {
   background: rgba(255, 180, 84, 0.08);
   border-left: 3px solid var(--warn);
@@ -1933,6 +2197,8 @@ mark.saved-note-mark {
 .suggested-edit.applied { opacity: 0.7; border-left-color: var(--student); }
 .suggested-edit.rejected { opacity: 0.5; }
 .suggested-edit.apply-error .se-status { color: var(--err); }
+
+/* Banner détection hallucination Whisper (Phase A.7.2 v8) */
 .whisper-hallu {
   background: rgba(255, 180, 84, 0.12);
   border-top: 1px solid rgba(255, 180, 84, 0.35);
@@ -1962,6 +2228,8 @@ mark.saved-note-mark {
   background: transparent; color: var(--fg-dim); border: 1px solid #555;
 }
 .whisper-hallu button + button:hover { background: rgba(255,255,255,0.05); }
+
+/* Bandeau d'attachements en attente d'envoi (Phase A.7.2 v10) */
 #attachments-tray {
   display: flex; flex-wrap: wrap; gap: 8px;
   padding: 10px 14px;
@@ -1999,6 +2267,7 @@ mark.saved-note-mark {
   padding: 2px 4px; line-height: 1;
 }
 #attachments-tray .att-del:hover { color: var(--err); }
+/* Phase v15.7.10 : bouton ✂ Rogner (uniquement sur images) */
 #attachments-tray .att-crop {
   background: transparent; color: var(--fg-dim);
   border: 0; cursor: pointer; font-size: 14px;
@@ -2010,6 +2279,9 @@ mark.saved-note-mark {
 #attachments-tray .att-empty {
   font-size: 12px; color: var(--fg-dim); font-style: italic;
 }
+
+/* Phase v15.7.10 : hint sous le bouton 📷 quand desktop : explique
+   pourquoi on a switché sur l'onglet Distant. Auto-dismiss après 7s. */
 .photo-desktop-hint {
   margin: 6px 14px;
   padding: 6px 10px;
@@ -2021,6 +2293,10 @@ mark.saved-note-mark {
   line-height: 1.4;
 }
 .photo-desktop-hint[hidden] { display: none; }
+
+/* Phase v15.7.10 : modal de rognage (Cropper.js).
+   Lightbox-like : overlay sombre + carte centrale qui contient l'image
+   wrapper Cropper + actions. */
 #crop-modal,
 #crop-preview-modal {
   position: fixed; inset: 0;
@@ -2031,6 +2307,11 @@ mark.saved-note-mark {
 }
 #crop-modal[hidden],
 #crop-preview-modal[hidden] { display: none; }
+/* Phase A.8.5 hotfix : le #crop-preview-modal (pré-preview au paste /
+   drag-drop / mobile / 📎) partageait le HTML structuré mais n'avait
+   pas de CSS d'overlay. Conséquence : il s'affichait nu en flux normal
+   en bas du body. Fix : merge dans la règle #crop-modal (overlay
+   sombre + centrage flex + z-index 1500). */
 .crop-card {
   background: var(--bg-elev);
   border: 1px solid #333;
@@ -2050,6 +2331,10 @@ mark.saved-note-mark {
 .crop-header h3 {
   margin: 0; font-size: 15px; font-weight: 600; color: var(--fg);
 }
+/* Phase A.8.5 hotfix : design moderne du bouton croix des modals
+   crop/crop-preview. Carré arrondi avec hover rouge destructif pour
+   signaler clairement « fermer ». Avant : background transparent +
+   font 22px brut, peu lisible et pas de feedback visuel. */
 #crop-close,
 #crop-preview-close {
   background: rgba(255, 255, 255, 0.06);
@@ -2087,6 +2372,7 @@ mark.saved-note-mark {
 }
 .crop-body img {
   display: block; max-width: 100%;
+  /* Cropper.js ajustera lui-même width/height au mount */
 }
 .crop-actions {
   display: flex; gap: 10px; justify-content: flex-end;
@@ -2119,7 +2405,12 @@ mark.saved-note-mark {
 .crop-btn-primary:disabled {
   opacity: 0.5; cursor: wait;
 }
+/* Cropper.js override : force le canvas à fit dans la modal */
 .crop-body .cropper-container { max-width: 100%; }
+
+/* Phase v15.7.16 : handles plus larges sur petit viewport (touch
+   devices). Les .cropper-point font 5×5 par défaut, dur à attraper
+   au doigt. On passe à 18×18 avec hit-zone élargie. */
 @media (max-width: 900px), (pointer: coarse) {
   .cropper-container .cropper-point {
     width: 18px; height: 18px;
@@ -2141,10 +2432,13 @@ mark.saved-note-mark {
     width: 22px; height: 22px;
     margin-left: -11px; margin-top: -11px;
   }
+  /* Lignes plus visibles aussi */
   .cropper-container .cropper-line {
     background-color: var(--accent, #62a8ff);
   }
 }
+
+/* Drop zone overlay quand on drag un fichier sur la fenêtre */
 body.drop-active::after {
   content: "📎 Déposez le fichier pour le joindre";
   position: fixed; inset: 0;
@@ -2155,6 +2449,7 @@ body.drop-active::after {
   z-index: 9998; pointer-events: none;
   letter-spacing: 0.5px;
 }
+
 #dialogue-input { display: flex; padding: 10px 14px; gap: 8px; background: var(--bg-elev); border-top: 1px solid #333; align-items: flex-end; }
 #user-input {
   flex: 1; background: var(--bg); color: var(--fg); border: 1px solid #444;
@@ -2164,6 +2459,7 @@ body.drop-active::after {
 }
 #send-btn { background: var(--student); color: #111; border: 0; padding: 8px 16px; border-radius: 3px; font-weight: 600; cursor: pointer; }
 #send-btn:disabled, #user-input:disabled, #mic-btn:disabled, #media-btn:disabled, #photo-btn:disabled, #rewrite-btn:disabled, #find-exo-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
 #mic-btn, #media-btn, #photo-btn, #rewrite-btn, #find-exo-btn {
   width: 38px; height: 38px; border-radius: 50%;
   background: #333; color: var(--fg); border: 1px solid #555;
@@ -2189,10 +2485,17 @@ body.drop-active::after {
   background: var(--warn); color: #111; border-color: var(--warn);
   cursor: wait; animation: pulse 1s infinite;
 }
+
+/* Popover ✨ Améliorer (Phase A.7.2 v15.5), apparaît au-dessus du
+   bouton, ancré à #dialogue-input qui est position: relative ci-dessus. */
 #dialogue-input { position: relative; }
 #rewrite-popover {
   position: absolute;
   bottom: calc(100% + 6px);
+  /* Phase v15.7.10 : Décalé de 46px (38+8) à droite suite à l'ajout du
+     bouton 📷 entre mic et media. Calcul (relatif au padding-box) :
+     mic 38 + gap 8 + photo 38 + gap 8 + media 38 + gap 8 + 4 marge = 142.
+     Avant : 96 (mic + media + rewrite seuls). */
   left: 142px;
   background: var(--bg-elev);
   border: 1px solid #444;
@@ -2205,7 +2508,14 @@ body.drop-active::after {
   flex-direction: column;
   gap: 2px;
 }
+/* L'attribut HTML `hidden` met `display: none` par défaut, mais notre
+   `display: flex` ci-dessus écrase ça. Re-force le hide pour que F5
+   parte sur un popover fermé (et que `closeRewritePopover()` marche). */
 #rewrite-popover[hidden] { display: none; }
+
+/* Phase Z.9.7 : popover « 🎛 Modifier ▾ » dans la tone-toolbar.
+   Groupe les 6 reformulations (📝/➕/📖/🎯/🔬/🔄) sous un seul bouton
+   pour épurer la barre. Style cohérent avec #rewrite-popover. */
 .tone-modify-wrap {
   position: relative;
   display: inline-block;
@@ -2230,6 +2540,9 @@ body.drop-active::after {
   gap: 2px;
 }
 .tone-modify-popover[hidden] { display: none; }
+/* Phase Z.9.8 : drop-down (popover s'ouvre VERS LE BAS) quand le
+   bouton est en haut du viewport et qu'il n'y a pas la place
+   au-dessus. Géré par _positionToneModifyPopover via getBoundingClientRect. */
 .tone-modify-popover.drop-down {
   bottom: auto;
   top: calc(100% + 6px);
@@ -2295,6 +2608,9 @@ body.drop-active::after {
   padding-top: 10px;
 }
 #rewrite-popover #rewrite-undo .rewrite-label { grid-row: 1; }
+
+/* Banner discret affiché au-dessus de l'input juste après un rewrite,
+   avec lien d'annulation. Disparaît à 8s ou au prochain rewrite. */
 #rewrite-banner {
   background: rgba(98, 168, 255, 0.08);
   border: 1px solid rgba(98, 168, 255, 0.35);
@@ -2310,18 +2626,33 @@ body.drop-active::after {
   padding: 3px 10px; border-radius: 3px; font-size: 11px; cursor: pointer;
 }
 #rewrite-banner button:hover { background: #2a2a2a; }
+
+/* Sidebar : grid à 4 rows (Phase A.10.14, retour top bar), slide
+   guidée en haut, tabs horizontaux sous, contenu scrollable au milieu,
+   footer sticky en bas. Avant A.10.14, A.10.4-13 utilisaient un wrapper
+   sidebar-main avec rail vertical à gauche puis miroir à droite, et
+   l'user a tranché « j'aime pas, à droite j'aime pas non plus, donc
+   remets en haut » (2026-05-14). */
 aside#sidebar {
   display: grid;
   grid-template-rows: auto auto 1fr auto;
   background: var(--bg-elev);
   min-height: 0;
-  overflow: hidden;
+  overflow: hidden;  /* le scroll est dans #sidebar-tab-content uniquement */
   padding: 0;
 }
 #sidebar > #guided-panel { padding: 12px 14px 8px; }
 #sidebar > #sidebar-tabs { padding: 0; }
+/* Phase A.10.14.4 : pas de padding sur tab-content lui-même. Chaque
+   pane a son propre padding interne (uniformisé plus bas). Sinon ça
+   accumulait avec les paddings spécifiques des notes-list, photos-grid,
+   etc. → vide énorme sur certains panes, normal sur d'autres. */
 #sidebar > #sidebar-tab-content { padding: 0; }
 #sidebar > #sidebar-footer { padding: 10px 14px 14px; }
+
+/* Bouton « Activer / Rappeler auto-nav » dans le panneau guidé (Phase v15).
+   Single point de contrôle : la checkbox start-form a été retirée parce
+   qu'elle créait une redondance UX confuse (grisée pendant session active). */
 #guided-remind-nav-btn {
   background: rgba(126, 182, 255, 0.10);
   color: var(--accent);
@@ -2335,6 +2666,8 @@ aside#sidebar {
 }
 #guided-remind-nav-btn:hover { background: rgba(126, 182, 255, 0.18); }
 #guided-remind-nav-btn:disabled { opacity: 0.4; cursor: wait; }
+
+/* Sélecteur de moteur dans le header (Phase A.7.2 v9) */
 #engine-switcher-wrap {
   display: inline-flex; align-items: center; gap: 4px;
   margin-left: auto; padding-left: 8px;
@@ -2347,6 +2680,8 @@ aside#sidebar {
   padding: 4px 6px; border-radius: 3px; font-size: 13px;
 }
 #engine-switcher:disabled { opacity: 0.5; cursor: wait; }
+
+/* Panneau historique sidebar (Phase A.7.2 v9) */
 #history-panel {
   display: flex; flex-direction: column; gap: 6px;
   border: 1px solid #333; border-radius: 4px;
@@ -2366,6 +2701,7 @@ aside#sidebar {
   padding: 2px 8px; cursor: pointer; font-size: 13px;
 }
 #history-refresh:hover { background: rgba(255,255,255,0.10); border-color: var(--accent); }
+
 #history-list { display: flex; flex-direction: column; gap: 4px; }
 .history-empty { color: var(--fg-dim); font-style: italic; font-size: 12px; padding: 8px; }
 .history-item {
@@ -2385,7 +2721,7 @@ aside#sidebar {
 .history-item .h-title {
   font-size: 13px; font-weight: 600; color: var(--fg);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  padding-right: 32px;
+  padding-right: 32px; /* place pour les boutons d'action */
 }
 .history-item .h-meta {
   font-size: 11px; color: var(--fg-dim);
@@ -2416,6 +2752,13 @@ aside#sidebar {
   padding: 2px 4px; font-size: 13px; width: 100%;
 }
 #quota-panel h2 { margin: 0 0 8px; font-size: 14px; text-transform: uppercase; color: var(--fg-dim); letter-spacing: 0.5px; }
+
+/* Compatibilité ancienne archi : laisser les classes mais l'élément
+   n'existe plus, les styles tombent silencieusement. Les contenus
+   correspondants vivent maintenant dans .sb-pane[data-pane=...] */
+
+/* Panneau Connexion mobile (Phase A.7.2 v10) : affiche les URLs LAN + Tailscale
+   pour scanner / coller dans le navigateur du téléphone. */
 #connection-panel h2 { margin: 0 0 8px; font-size: 14px; text-transform: uppercase; color: var(--fg-dim); letter-spacing: 0.5px; }
 #connection-content { display: flex; flex-direction: column; gap: 8px; font-size: 12px; }
 #connection-content .conn-row {
@@ -2489,6 +2832,10 @@ aside#sidebar {
 #quota-content .bar > span { display: block; height: 100%; background: var(--accent); transition: width 0.3s; }
 #quota-content .bar.warn > span { background: var(--warn); }
 #quota-content .bar.err > span { background: var(--err); }
+
+/* Section titles + bloc moteurs alternatifs (Phase v15.6.5), affichés
+   sous le quota Pro Max avec balance DeepSeek live + tier free Groq/
+   Gemini/API Anthropic. Visuel compact pour ne pas écraser le panneau. */
 #quota-content .quota-section-title {
   font-size: 11px;
   text-transform: uppercase;
@@ -2550,12 +2897,16 @@ aside#sidebar {
   margin-top: 3px;
   font-style: italic;
 }
+
 #record-indicator { padding: 12px; border: 1px dashed #444; border-radius: 4px; text-align: center; font-size: 13px; color: var(--fg-dim); }
 #record-indicator.active { border-color: var(--err); color: var(--err); animation: pulse 1s infinite; }
 @keyframes pulse { 50% { opacity: 0.5; } }
+
 #end-session { background: transparent; color: var(--err); border: 1px solid var(--err); padding: 8px; border-radius: 3px; cursor: pointer; }
 #end-session:disabled { opacity: 0.3; cursor: not-allowed; }
 #end-session:not(:disabled):hover { background: var(--err); color: #111; }
+
+/* Mode guidé (Phase A.7.2 v5) : sidebar panel slide-par-slide */
 #guided-panel {
   display: flex;
   flex-direction: column;
@@ -2600,6 +2951,32 @@ aside#sidebar {
 #guided-nav button:not(:disabled):hover { background: rgba(255,255,255,0.10); border-color: var(--accent); }
 #guided-nav button:disabled { opacity: 0.35; cursor: not-allowed; }
 #guided-hint { font-size: 11px; color: var(--fg-dim); font-style: italic; line-height: 1.35; }
+
+/* Onglets de la sidebar (Phase A.10.4 : rail vertical VSCode-style ;
+   Phase A.10.7 : affinage visuel : espacement, pills, contraste).
+   Le rail ~48px à gauche héberge les icônes ; le pane actif occupe
+   tout l'espace restant à droite. Tooltip natif via title=.
+
+   Évolution :
+   - A.7.2 v11 : top tabs horizontaux
+   - A.10.1 : icons-only + label sur active → écrase les inactifs
+   - A.10.3 : grid 4×2 avec labels → asymétrique et serré
+   - A.10.4 : rail vertical, icon-only (fonctionnel mais brut)
+   - A.10.7 : rail aéré (gap, padding), pill latérale active, hover
+              avec micro-animation, contraste renforcé. */
+/* Phase A.10.8 : affinage visuel du rail (3ème itération).
+   Décisions :
+   - Rail SANS fond propre → cohésion totale avec la sidebar (un seul
+     panneau, plus une superposition de couches).
+   - Emojis désaturés (saturate 0.5 + opacity 0.55) sur inactifs →
+     uniformise le rendu coloré Windows et donne un look pro tech.
+     Hover/active : back to full color + opacity 1 → effet "pop".
+   - Tabs plus grands (42 px de haut, padding aéré 8px) avec radius 8px.
+   - Active : fond accent 16% + pill latérale 4px + glow inset doux.
+   - Hover : fond accent 8% (au lieu de gris générique) → cohérent
+     avec l'identité visuelle.
+   - Transitions douces (250 ms) pour l'effet "soyeux". */
+/* Phase A.10.14 : retour à la barre horizontale top, icons-only. */
 #sidebar-tabs {
   display: flex;
   flex-direction: row;
@@ -2613,6 +2990,11 @@ aside#sidebar {
   background: var(--bg-elev);
   position: relative;
 }
+
+/* Phase A.10.13c : Sommaire dynamique dans l'onglet 📚 Docs.
+   Liste auto-construite à partir des sections / exercices / questions
+   que le tuteur introduit dans ses réponses (extracteur regex post-stream).
+   Affichage compact au-dessus des PDFs officiels. */
 #outline-panel {
   margin-bottom: 14px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.07);
@@ -2685,11 +3067,17 @@ aside#sidebar {
   cursor: pointer; font-size: 11px; padding: 0 3px;
 }
 .outline-item-actions button:hover { color: var(--fg); }
+/* Indicateur visuel par kind (à gauche du titre) */
 .outline-item[data-kind="section"] { border-left-color: rgba(255, 200, 80, 0.7); }
 .outline-item[data-kind="subsection"] { border-left-color: rgba(180, 220, 100, 0.6); }
 .outline-item[data-kind="exercise"] { border-left-color: rgba(126, 182, 255, 0.7); }
 .outline-item[data-kind="topic"] { border-left-color: rgba(180, 140, 250, 0.7); }
 .outline-item[data-kind="question"] { border-left-color: rgba(220, 130, 200, 0.6); }
+
+/* Phase A.10.13 : warnings inline pour les checkboxes potentiellement
+   déroutantes du form de lancement (🎲 Sans énoncé, 💡 Sujet libre).
+   Affichage : caché par défaut, visible quand la case correspondante
+   est cochée (toggle JS). Style attention orange, pas trop agressif. */
 .form-toggle-warnings {
   width: 100%;
   margin-top: 4px;
@@ -2709,6 +3097,16 @@ aside#sidebar {
 }
 .form-toggle-warning[hidden] { display: none; }
 .form-toggle-warning strong { color: rgba(255, 200, 80, 1); }
+
+/* Phase A.10.9 : scrollbar custom global pour la sidebar.
+   Friction user 2026-05-14 : le scrollbar natif Windows est gros, blanc,
+   contraste violemment avec le thème sombre. Solution :
+   - Track transparent
+   - Thumb gris très transparent au repos (presque invisible)
+   - Thumb plus visible au hover de la zone scrollable
+   - Width 8 px sur les panes (zones de contenu), 4 px sur le rail (étroit)
+   - Border-radius pour l'aspect arrondi
+   - Firefox : scrollbar-width: thin + scrollbar-color */
 aside#sidebar,
 aside#sidebar * {
   scrollbar-width: thin;
@@ -2735,10 +3133,15 @@ aside#sidebar *::-webkit-scrollbar-thumb:active {
   background: rgba(126, 182, 255, 0.45);
   background-clip: content-box;
 }
+/* Rail tabs : version compact (scrollbar plus fin pour ne pas voler de
+   place à un rail déjà étroit). */
 #sidebar-tabs::-webkit-scrollbar { width: 4px; }
 #sidebar-tabs::-webkit-scrollbar-thumb {
   border: 1px solid transparent;
 }
+
+/* Phase A.10.9 : scrollbar custom global pour le main dialogue aussi
+   (transcript chat). Même registre visuel pour cohérence. */
 #dialogue,
 #dialogue * {
   scrollbar-width: thin;
@@ -2785,6 +3188,8 @@ aside#sidebar *::-webkit-scrollbar-thumb:active {
   align-items: center;
   justify-content: center;
   min-height: 38px;
+  /* Désaturation des emojis colorés Windows pour cohérence avec le
+     thème sombre tech. Reset au hover et active. */
   filter: saturate(0.4) brightness(0.95);
   opacity: 0.8;
 }
@@ -2800,6 +3205,10 @@ aside#sidebar *::-webkit-scrollbar-thumb:active {
   filter: saturate(1) brightness(1.05);
   opacity: 1;
 }
+/* Phase A.10.14 : pill bas (souligné style Material) sur l'onglet
+   actif. Layout horizontal → la pill devient un underline accent
+   sous l'icône. Utilise ::before pour libérer ::after pour le badge
+   has-notif (conflit possible si un tab est active ET has-notif). */
 #sidebar-tabs .sb-tab.active::before {
   content: "";
   position: absolute;
@@ -2811,6 +3220,8 @@ aside#sidebar *::-webkit-scrollbar-thumb:active {
   border-radius: 2px 2px 0 0;
   box-shadow: 0 0 6px rgba(126, 182, 255, 0.6);
 }
+/* Indicateur de notification optionnel (futur : badge nouvelle photo,
+   nouvelle consigne tuteur, etc.). Activé via .has-notif. */
 #sidebar-tabs .sb-tab.has-notif::after {
   content: "";
   position: absolute;
@@ -2822,6 +3233,7 @@ aside#sidebar *::-webkit-scrollbar-thumb:active {
   background: #ff5b5b;
   box-shadow: 0 0 0 2px var(--bg-elev, #1c1f25);
 }
+/* Highlight scintillement pour les coach marks (Phase A.10.5) */
 #sidebar-tabs .sb-tab.sb-tab-spotlight {
   animation: tab-spotlight-pulse 1.5s ease-in-out 2;
 }
@@ -2833,12 +3245,22 @@ aside#sidebar *::-webkit-scrollbar-thumb:active {
                 0 0 12px 2px rgba(255, 220, 80, 0.5);
   }
 }
+
+/* Contenu de l'onglet actif (zone scrollable principale).
+   Phase A.10.14.5 (simplification radicale) : tab-content scroll global,
+   pane en block normal. Padding uniforme appliqué directement sur les
+   panes. Pas de flex column (cassait le switch entre onglets). */
 #sidebar-tab-content {
   overflow-y: auto;
   min-height: 0;
 }
 #sidebar-tab-content .sb-pane { display: none; }
 #sidebar-tab-content .sb-pane.active { display: block; }
+/* Padding uniforme appliqué aux panes qui n'ont pas leur propre header
+   structuré (quota / corrige / mobile / history). Les autres (notes,
+   photos, stickies, tips) ont un `#xxx-header` avec padding 10px 14px
+   + `#xxx-list` avec padding 8-10px ; on les laisse tels quels.
+   Phase A.10.14.6 : history ajouté ici (user 2026-05-14). */
 #sidebar-tab-content > .sb-pane[data-pane="quota"],
 #sidebar-tab-content > .sb-pane[data-pane="corrige"],
 #sidebar-tab-content > .sb-pane[data-pane="mobile"],
@@ -2852,6 +3274,10 @@ aside#sidebar *::-webkit-scrollbar-thumb:active {
   color: var(--fg-dim);
   letter-spacing: 0.5px;
 }
+
+/* Footer sticky (record-indicator + actions terminer/récap).
+   Phase A.10.13b : `#sidebar-footer-actions` regroupe les deux boutons
+   en row (récap à gauche, terminer à droite). */
 #sidebar-footer {
   display: flex;
   flex-direction: column;
@@ -2881,6 +3307,8 @@ aside#sidebar *::-webkit-scrollbar-thumb:active {
   background: rgba(126, 182, 255, 0.20);
   border-color: var(--accent);
 }
+
+/* Panneau Corrigés (sidebar tab, visible dans tous les modes) */
 #corrige-header {
   display: flex; flex-direction: column; gap: 6px;
   margin-bottom: 8px;
@@ -2921,6 +3349,8 @@ aside#sidebar *::-webkit-scrollbar-thumb:active {
 }
 #corrige-nav button:not(:disabled):hover { background: rgba(255,255,255,0.10); border-color: var(--accent); }
 #corrige-nav button:disabled { opacity: 0.35; cursor: not-allowed; }
+
+/* Refs « page N du corrigé/script » cliquables dans les bulles Compagnon */
 .corrige-pageref {
   color: var(--accent);
   text-decoration: underline dotted;
@@ -2934,6 +3364,8 @@ aside#sidebar *::-webkit-scrollbar-thumb:active {
   color: var(--fg);
   text-decoration: underline;
 }
+
+/* Modal de confirmation « session existante » au lancement */
 #start-conflict-modal {
   position: fixed; inset: 0;
   background: rgba(0, 0, 0, 0.65);
@@ -2995,6 +3427,9 @@ aside#sidebar *::-webkit-scrollbar-thumb:active {
 #start-conflict-modal .scm-actions .scm-overwrite:hover {
   background: rgba(255, 100, 100, 0.10);
 }
+
+/* ============================================================ Phase v15.7.35 : Modal fallback mode guidé */
+
 #guided-fallback-modal.modal-overlay {
   position: fixed; inset: 0;
   background: rgba(0, 0, 0, 0.55);
@@ -3164,11 +3599,14 @@ aside#sidebar *::-webkit-scrollbar-thumb:active {
   border-color: var(--warn);
   background: rgba(255, 180, 84, 0.10);
 }
+
+/* Phase v15.7.35.1 : slot actif (cible du picker) mis en évidence pour
+   que l'user sache où va atterrir son prochain clic dans la liste. */
 .gfb-selection-row.gfb-sel-active {
   background: rgba(126, 182, 255, 0.08);
   border-left: 3px solid var(--accent);
   padding-left: 6px;
-  margin-left: -9px;
+  margin-left: -9px;  /* compense le border-left pour rester aligné */
   border-radius: 0 4px 4px 0;
 }
 .gfb-sel-target-marker {
@@ -3285,6 +3723,9 @@ aside#sidebar *::-webkit-scrollbar-thumb:active {
   background: rgba(255, 255, 255, 0.04);
   border-color: #777;
 }
+/* Phase v15.7.36.7 : bouton ✎ Modifier teinté warning pour signaler
+   l'action « corriger les choix IA ». Avant : style browser par défaut
+   (oublié au commit v15.7.36.4). */
 .gfb-ai-modify {
   border-color: rgba(255, 180, 84, 0.55);
   color: var(--warn);
@@ -3328,6 +3769,13 @@ aside#sidebar *::-webkit-scrollbar-thumb:active {
 .gfb-launch-btn:hover:not(:disabled) {
   background: rgba(126, 182, 255, 0.28);
 }
+
+/* Phase A.8.5 : checkboxes en chip cliquables (revisité depuis
+   v15.7.36.5). Avant : checkbox native + texte petit, mélangé avec les
+   selects. Après : carré légèrement arrondi (radius 3px comme les
+   selects/inputs du form) avec état actif visible (fond accent + texte
+   sombre quand coché). Cohérent avec le reste du form où tout est carré
+   à border-radius 3px. */
 .start-form-toggle {
   display: inline-flex;
   align-items: center;
@@ -3349,6 +3797,8 @@ aside#sidebar *::-webkit-scrollbar-thumb:active {
   background: rgba(255, 255, 255, 0.07);
   border-color: #555;
 }
+/* Checkbox native cachée : le label entier est cliquable, l'état visuel
+   est géré par :has(input:checked) sur le label. */
 .start-form-toggle input[type="checkbox"] {
   position: absolute;
   opacity: 0;
@@ -3357,6 +3807,7 @@ aside#sidebar *::-webkit-scrollbar-thumb:active {
   margin: 0;
   pointer-events: none;
 }
+/* État actif (coché) : fond accent + texte sombre pour contraste. */
 .start-form-toggle:has(input[type="checkbox"]:checked) {
   background: var(--accent);
   border-color: var(--accent);
@@ -3366,6 +3817,9 @@ aside#sidebar *::-webkit-scrollbar-thumb:active {
 .start-form-toggle:has(input[type="checkbox"]:checked):hover {
   filter: brightness(1.1);
 }
+
+/* Phase A.8.3 : zone Sujet libre (hors COURS/), affichée quand la
+   checkbox 💡 Sujet libre est cochée. Bandeau carte sous le form. */
 #sujet-libre-zone {
   display: flex;
   flex-direction: column;
@@ -3404,6 +3858,11 @@ aside#sidebar *::-webkit-scrollbar-thumb:active {
 #sujet-libre-zone .start-form-toggle {
   align-self: flex-start;
 }
+
+/* ============================================================ Phase v15.7.36 : Mode guidé lite + prompt CC */
+
+/* Phase v15.7.36.4 : compacté (avant : trop d'espacements verticaux,
+   user feedback « moche faut rendre ça plus beau »). */
 .guided-lite-notice {
   background: rgba(255, 180, 84, 0.06);
   border: 1px solid rgba(255, 180, 84, 0.35);
@@ -3456,6 +3915,7 @@ aside#sidebar *::-webkit-scrollbar-thumb:active {
   background: rgba(126, 182, 255, 0.20);
   border-color: rgba(126, 182, 255, 0.75);
 }
+
 #cc-prompt-modal.modal-overlay {
   position: fixed; inset: 0;
   background: rgba(0, 0, 0, 0.55);
@@ -3553,6 +4013,9 @@ aside#sidebar *::-webkit-scrollbar-thumb:active {
 .cc-prompt-close:hover {
   background: rgba(255, 255, 255, 0.04);
 }
+
+/* ============================================================ Phase v15.7.31 : Carte récap post-séance */
+
 .session-recap-card {
   background: linear-gradient(180deg, rgba(126,182,255,0.06), rgba(126,182,255,0.02));
   border: 1px solid rgba(126,182,255,0.30);
@@ -3569,6 +4032,7 @@ aside#sidebar *::-webkit-scrollbar-thumb:active {
   align-items: center;
   gap: 8px;
 }
+/* Phase A.8.4 : bouton ✕ pour fermer la carte récap. */
 .session-recap-card .session-recap-close {
   margin-left: auto;
   background: transparent;
@@ -3619,6 +4083,7 @@ aside#sidebar *::-webkit-scrollbar-thumb:active {
   margin: 2px 0 8px 0;
   font-style: italic;
 }
+/* Mini-exo ciblé : bouton 🎯 à côté de chaque concept du récap. */
 .session-recap-card .recap-concepts li {
   display: flex;
   align-items: center;
@@ -3664,6 +4129,7 @@ aside#sidebar *::-webkit-scrollbar-thumb:active {
   opacity: 0.4;
   cursor: not-allowed;
 }
+/* Phase A.11.1 : rangée de boutons d'avancement de la carte récap. */
 .session-recap-card .recap-next-steps-row {
   display: flex;
   flex-wrap: wrap;
@@ -3684,6 +4150,12 @@ aside#sidebar *::-webkit-scrollbar-thumb:active {
 .session-recap-card .recap-close-btn:hover:not(:disabled) {
   background: rgba(255,100,100,0.08);
 }
+
+/* ============================================================ Puce d'appel d'outil
+   Phase A.12 : quand le tuteur lit un fichier (Read/Grep/Glob) pendant sa
+   réponse, la boucle d'outils injecte un marqueur que le front rend en cette
+   puce. L'étudiant voit le tuteur « agir » entre deux phrases, façon
+   Claude Code, au lieu d'un bloc de texte opaque. */
 .tool-call-chip {
   display: flex;
   align-items: center;
@@ -3713,6 +4185,7 @@ aside#sidebar *::-webkit-scrollbar-thumb:active {
   border-radius: 3px;
   font-size: 12px;
 }
+/* Point lumineux qui pulse : donne le sentiment d'une action « vivante ». */
 .tool-call-chip .tcc-dot {
   width: 7px;
   height: 7px;
@@ -3740,6 +4213,10 @@ aside#sidebar *::-webkit-scrollbar-thumb:active {
   font-weight: 600;
   font-size: 11px;
 }
+
+/* ============================================================ Bloc de questions à choix
+   Phase A.12.4 : le tuteur émet <<<CHOICES>>> ; le front rend une question
+   avec boutons cliquables + champ libre, façon interface Claude.ai. */
 .choices-block {
   margin: 12px 0 6px;
   padding: 12px 14px;

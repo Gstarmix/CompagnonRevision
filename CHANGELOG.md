@@ -10,6 +10,21 @@
 
 ---
 
+## Phase S5 (Cartable) : harmonisation visuelle + fenêtre applicative (2026-07-02)
+
+User : *« Améliore aussi l'interface du compagnon revision pour qu'il soit adapté comme celui de Cartable … soit tu fusionnes soit deux logiques, à toi de voir. »*
+
+Contexte : Cartable est devenu une application locale (serveur stdlib + front web dans une fenêtre Edge `--app`, thème nuit bleutée / accent ambre) et sait désormais ouvrir une séance droit directement dans le Compagnon (lien profond `?source=droit&autostart=1` si Flask 5680 tourne, sinon `compagnon.py <slug> <CM|TD> <n> full --source droit --autostart`). Décision d'architecture : **pas de fusion des codes** (les deux moteurs restent indépendants), mais **une seule expérience visuelle et de lancement**.
+
+Deux changements, volontairement minimaux :
+
+1. **Palette `:root` de `style.css`** alignée sur celle de Cartable (`--bg #0f1319`, `--bg-elev #161c26`, `--fg #e8ecf2`, `--fg-dim #9aa7b8`, `--accent #e8b04b` ambre au lieu du bleu, `--student`/`--claude` adoucis dans les mêmes tons). Aucune des règles CSS n'est retouchée : seules les 9 variables changent, retour arrière trivial.
+2. **`compagnon.py` : `_open_ui(url)`** ouvre l'UI dans une fenêtre applicative Edge (`--app=`, sans barre de navigateur), comme Cartable. Repli sur `webbrowser.open` (comportement historique) si Edge est introuvable. Prompts, endpoints, logique de séance : intouchés.
+
+Compile OK. Le rendu visuel des vues denses (cahier, surligneurs, chips) reste à vérifier à l'écran en vraie séance : les couleurs fonctionnelles (`--student`, `--claude`, violet/vert cahier) n'ont pas changé de rôle.
+
+---
+
 ## Phase A.12.6 : Titre de carte cahier : violet systématique (2026-05-21)
 
 User : *« pourquoi tous les titres sont surlignés en vert et non en violet ? … ça veut dire qu'une des couleurs ne sert à rien. »*
@@ -1252,7 +1267,7 @@ User feedback :
 ### 2. Compagnon « se débrouille » face à différents types de workspace
 
 - `prompt_builder.detect_workspace_type(root)` → `"code"` / `"doc"` / `"mixed"` selon le ratio d'extensions reconnues (code-heavy = >60% `.py`/`.js`/`.cs`/etc., doc-heavy = <40% code parmi les fichiers à extension reconnue). Cap 500 fichiers scannés pour éviter de bloquer sur un dépôt géant.
-- `prompt_builder.build_workspace_summary(root, excludes, focus_subdir)` génère un résumé textuel injecté au contexte initial : arbre depth 3 (cap 20% du budget chars) + contenu intégral des fichiers-pivots détectés (`README*`, `CLAUDE.md`, `AGENTS.md`, `ARCHITECTURE.md`, `CHANGELOG.md`, `pyproject.toml`, `package.json`, `Cargo.toml`, `Dockerfile`, `.github/-instructions.md`, etc., cap 8 k bytes par pivot, total ≤ 50 k chars). Excludes par défaut : `.git`, `node_modules`, `__pycache__`, `_archives`, `_sessions`, `_secrets`, `*.pyc`, `*.dll`, `*.log`, etc.
+- `prompt_builder.build_workspace_summary(root, excludes, focus_subdir)` génère un résumé textuel injecté au contexte initial : arbre depth 3 (cap 20% du budget chars) + contenu intégral des fichiers-pivots détectés (`README*`, `CLAUDE.md`, `AGENTS.md`, `ARCHITECTURE.md`, `CHANGELOG.md`, `pyproject.toml`, `package.json`, `Cargo.toml`, `Dockerfile`, `.github/copilot-instructions.md`, etc., cap 8 k bytes par pivot, total ≤ 50 k chars). Excludes par défaut : `.git`, `node_modules`, `__pycache__`, `_archives`, `_sessions`, `_secrets`, `*.pyc`, `*.dll`, `*.log`, etc.
 - Marker `[WORKSPACE_TYPE : code|doc|mixed]` injecté dans le header de session : le prompt §1.4 sélectionne la posture pédagogique correspondante (code = explication module-par-module ; doc = synthèse de chapitres ; mixed = hybride).
 
 ### 3. Fonctionnalités annexes demandées par l'user
@@ -4054,13 +4069,13 @@ Aussi : conflit visuel sur l'emoji 💡, utilisé par le bouton footer Z.8.4 ET 
 - Click → récupère le texte de la bulle Compagnon parente (`parentTurn.dataset.rawText` ou `textContent`) + le dernier message student rendu **avant** cette bulle (helper `_getLastStudentTextBefore`). Construit une description structurée via `_buildContextualExoDescription` :
   ```
   Le tuteur vient de me dire / demander :
-
+  
   <texte tuteur>
-
+  
   Ma dernière intervention était :
-
+  
   <dernier student>
-
+  
   Je bloque pour répondre, trouve-moi dans mes cours un exercice voisin du même type pour m'entraîner avant de revenir à celui-ci.
   ```
 - Borne 800 chars sur le texte tuteur, 400 sur le student → évite d'envoyer des dumps massifs. Suffisant pour le contexte d'un blocage.
@@ -4996,7 +5011,7 @@ debounce, taper « 95 » écrirait transitoirement 9 (puis 95) sur disque,
 risquant qu'un démarrage de session entre les deux frappes voie un seuil
 ridicule. Méthodes `_schedule_thresholds_save` /
 `_schedule_caps_save` réinitialisent le timer à chaque keystroke. Les
-s `_save_thresholds_silent` / `_save_caps_silent` sont fail-soft
+exécutants `_save_thresholds_silent` / `_save_caps_silent` sont fail-soft
 (corrupt JSON ou valeur hors range : on swallow et le bouton 💾 manuel
 reste dispo).
 

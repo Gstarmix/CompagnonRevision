@@ -1,4 +1,43 @@
+"""
+migrate_photos_to_uploads.py : Phase A.10.3 (2026-05-14)
+
+Migration one-shot des anciennes photos de séance depuis COURS/ vers
+_uploads/. Avant Phase A.10.2, les uploads étaient stockés sous
+``COURS/{MAT}/{TYPE}/{TYPE}{N}/photos/`` ; A.10.2 a basculé les
+nouvelles photos vers ``_uploads/{session_id}/photos/`` mais conservé
+les anciennes en place (cohabitation via le champ ``storage``).
+
+Friction user 2026-05-14 : *« pourquoi ne pas déplacer les anciennes
+photos aussi ? »*. Vraie question : la cohabitation complique le code
+à terme et laisse COURS/ pollué. Ce script effectue le rattrapage.
+
+Pour chaque session ``_sessions/*.json`` :
+  1. Scan le transcript student pour les ``![alt](rel_path)`` qui
+     pointent sous COURS/ (pas de préfixe ``_uploads/``, pas d'URL).
+  2. Vérifie que le fichier existe sur disque sous COURS_ROOT.
+  3. Déplace le fichier vers ``UPLOADS_DIR/{session_id}/photos/``.
+     En cas de collision (même nom déjà présent), suffixe ``_migN``.
+  4. Met à jour le markdown dans ``messages[id].text`` : préfixe
+     ``_uploads/`` ajouté + nouveau rel_path. Le ``transcript[]``
+     dérivé est rebuild depuis ``current_branch_path``.
+  5. Met à jour ``session_photos[]`` (si présent) : nouveau rel_path,
+     ``storage = "uploads"``, marker ``migrated_from`` posé.
+  6. Atomic write du JSON.
+
+Backup auto AVANT toute modif : copie ``_sessions/`` entier vers
+``_sessions/_backup_pre_a10_3/``. Le script refuse de tourner si ce
+dossier existe déjà (pour éviter d'écraser un backup existant).
+
+Modes :
+    python migrate_photos_to_uploads.py              # dry-run (default)
+    python migrate_photos_to_uploads.py --apply      # exécute
+    python migrate_photos_to_uploads.py --apply --no-backup
+                                                     # skip le backup
+                                                     # (déconseillé)
+"""
+
 from __future__ import annotations
+
 import argparse
 import json
 import logging
@@ -9,22 +48,34 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
+
+# Path setup pour import config depuis le repo
 ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
-from config import COURS_ROOT, SESSIONS_DIR, UPLOADS_DIR
+
+from config import COURS_ROOT, SESSIONS_DIR, UPLOADS_DIR  # noqa: E402
+
 logger = logging.getLogger(__name__)
+
 _IMG_MD_RE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
+
+# Extensions considérées comme images migrables
 _IMAGE_EXTS = {"jpg", "jpeg", "png", "webp", "heic", "gif", "svg", "bmp", "tiff"}
+
+
 @dataclass
 class MoveOp:
+    """Une opération de déplacement physique + update markdown."""
     session_id: str
     msg_id: str
-    old_rel: str
+    old_rel: str           # path relatif à COURS_ROOT, ex AN1/TD/TD5/photos/p_v1.jpg
     old_full: Path
-    new_rel: str
+    new_rel: str           # path relatif à UPLOADS_DIR, ex sess_X/photos/p_v1.jpg
     new_full: Path
-    alt: str
+    alt: str               # texte alt du markdown
+
+
 @dataclass
 class SessionStats:
     session_id: str
@@ -32,7 +83,11 @@ class SessionStats:
     skipped_missing: list[str] = field(default_factory=list)
     skipped_other: list[str] = field(default_factory=list)
     json_updated: bool = False
+
+
 def _is_cours_relative_path(rel: str) -> bool:
+    """True si le path ressemble à un chemin COURS-relatif (pas un URL,
+    pas un préfixe `_uploads/`, pas `/api/`, pas absolu)."""
     rel = rel.strip()
     if not rel:
         return False
@@ -40,10 +95,14 @@ def _is_cours_relative_path(rel: str) -> bool:
         return False
     if rel.startswith(("/", "\\")):
         return False
-    if len(rel) >= 2 and rel[1] == ":":
+    if len(rel) >= 2 and rel[1] == ":":  # Windows drive letter
         return False
     return True
+
+
 def _plan_session(data: dict, session_id: str) -> SessionStats:
+    """Analyse un JSON de session, retourne le plan de migration sans rien
+    modifier sur disque."""
     stats = SessionStats(session_id=session_id)
     messages = data.get("messages") or {}
     if not isinstance(messages, dict):
@@ -73,7 +132,12 @@ def _plan_session(data: dict, session_id: str) -> SessionStats:
             if ext not in _IMAGE_EXTS:
                 stats.skipped_other.append(old_rel)
                 continue
+            # Dédup par old_rel : si la même image apparaît dans plusieurs
+            # messages student, on ne planifie qu'un seul move (un fichier).
             if old_rel in seen_old_paths:
+                # Mais on note quand même le markdown à update plus tard
+                # → on ré-enregistre une "move" sans déplacement physique.
+                # Trouve la new_rel correspondante du 1ᵉʳ move.
                 first = next((mv for mv in stats.moves if mv.old_rel == old_rel), None)
                 if first is not None:
                     stats.moves.append(MoveOp(
@@ -84,8 +148,12 @@ def _plan_session(data: dict, session_id: str) -> SessionStats:
                     ))
                 continue
             seen_old_paths.add(old_rel)
+            # Construit le nouveau path sous UPLOADS_DIR
             new_dir = UPLOADS_DIR / session_id / "photos"
             new_full = new_dir / old_full.name
+            # Collision résolution : si le target existe déjà (cas rare,
+            # ex: même filename dans plusieurs sessions partageant un id
+            # tronqué), suffixe _migN.
             v = 1
             stem = old_full.stem
             suffix = old_full.suffix
@@ -100,13 +168,18 @@ def _plan_session(data: dict, session_id: str) -> SessionStats:
                 new_rel=new_rel, new_full=new_full, alt=alt,
             ))
     return stats
+
+
 def _apply_moves(data: dict, stats: SessionStats, *, dry_run: bool) -> bool:
+    """Exécute les déplacements physiques + met à jour le JSON in-place.
+    Retourne True si le JSON a été modifié."""
     if not stats.moves:
         return False
-    physical_moves: dict[str, Path] = {}
+    # 1) Déplace les fichiers (uniquement les moves uniques par old_rel)
+    physical_moves: dict[str, Path] = {}  # old_rel → new_full
     for mv in stats.moves:
         if mv.old_rel in physical_moves:
-            continue
+            continue  # déjà déplacé
         physical_moves[mv.old_rel] = mv.new_full
         if dry_run:
             continue
@@ -115,7 +188,10 @@ def _apply_moves(data: dict, stats: SessionStats, *, dry_run: bool) -> bool:
             shutil.move(str(mv.old_full), str(mv.new_full))
         except (OSError, shutil.Error) as e:
             logger.error("move FAILED %s → %s : %s", mv.old_full, mv.new_full, e)
+            # En cas d'échec partiel, on ne touche pas au JSON pour
+            # cette migration : on laisse le marker old_rel intact.
             raise
+    # 2) Mets à jour le markdown dans messages[msg_id].text
     messages = data.get("messages") or {}
     by_msg: dict[str, list[MoveOp]] = {}
     for mv in stats.moves:
@@ -128,8 +204,12 @@ def _apply_moves(data: dict, stats: SessionStats, *, dry_run: bool) -> bool:
         for mv in mvs:
             old_md = f"![{mv.alt}]({mv.old_rel})"
             new_md = f"![{mv.alt}](_uploads/{mv.new_rel})"
+            # Remplacement précis (peut y avoir plusieurs occurrences si
+            # l'user a posté la même image 2× dans le même message, on
+            # remplace tout).
             text = text.replace(old_md, new_md)
         msg["text"] = text
+    # 3) Re-dérive transcript[] depuis current_branch_path + messages
     branch_path = data.get("current_branch_path") or []
     if branch_path and isinstance(branch_path, list):
         new_transcript = []
@@ -144,6 +224,7 @@ def _apply_moves(data: dict, stats: SessionStats, *, dry_run: bool) -> bool:
                 "id": mid,
             })
         data["transcript"] = new_transcript
+    # 4) Mets à jour session_photos[] si présent
     session_photos = data.get("session_photos") or []
     if isinstance(session_photos, list):
         for ph in session_photos:
@@ -159,12 +240,17 @@ def _apply_moves(data: dict, stats: SessionStats, *, dry_run: bool) -> bool:
                 ph["storage"] = "uploads"
                 ph["migrated_from"] = old_rel
     return True
+
+
 def _atomic_write_json(path: Path, data: dict) -> None:
     tmp = path.with_suffix(path.suffix + ".tmp")
     with tmp.open("w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
     os.replace(tmp, path)
+
+
 def _do_backup(sessions_dir: Path) -> Path:
+    """Backup complet de _sessions/*.json vers _sessions/_backup_pre_a10_3/."""
     backup_dir = sessions_dir / "_backup_pre_a10_3"
     if backup_dir.exists():
         raise RuntimeError(
@@ -178,6 +264,8 @@ def _do_backup(sessions_dir: Path) -> Path:
         n += 1
     logger.info("Backup : %d sessions copiées dans %s", n, backup_dir)
     return backup_dir
+
+
 def main(argv: Optional[list[str]] = None) -> int:
     parser = argparse.ArgumentParser(
         description="Migre les photos de séance depuis COURS/.../photos/ vers _uploads/{session_id}/photos/"
@@ -195,25 +283,32 @@ def main(argv: Optional[list[str]] = None) -> int:
         help=f"Dossier des sessions (défaut : {SESSIONS_DIR})",
     )
     args = parser.parse_args(argv)
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
     )
+
     sessions_dir: Path = args.sessions_dir
     if not sessions_dir.is_dir():
         logger.error("Sessions dir introuvable : %s", sessions_dir)
         return 1
+
     mode = "APPLY" if args.apply else "DRY-RUN"
     logger.info("=== Migration photos COURS → _uploads (%s) ===", mode)
     logger.info("Sessions dir : %s", sessions_dir)
     logger.info("COURS_ROOT    : %s", COURS_ROOT)
     logger.info("UPLOADS_DIR   : %s", UPLOADS_DIR)
+
+    # Backup en mode apply (sauf si --no-backup)
     if args.apply and not args.no_backup:
         try:
             _do_backup(sessions_dir)
         except RuntimeError as e:
             logger.error("Backup refusé : %s", e)
             return 2
+
+    # Scan + plan toutes les sessions
     plans: list[tuple[Path, dict, SessionStats]] = []
     for json_path in sorted(sessions_dir.glob("*.json")):
         try:
@@ -226,15 +321,19 @@ def main(argv: Optional[list[str]] = None) -> int:
         stats = _plan_session(data, session_id)
         if stats.moves or stats.skipped_missing:
             plans.append((json_path, data, stats))
+
     total_moves = sum(len({mv.old_rel for mv in p[2].moves}) for p in plans)
     total_md_updates = sum(len(p[2].moves) for p in plans)
     total_missing = sum(len(p[2].skipped_missing) for p in plans)
     total_other = sum(len(p[2].skipped_other) for p in plans)
+
     logger.info("Sessions avec changements : %d", len(plans))
     logger.info("Photos à déplacer (uniques) : %d", total_moves)
     logger.info("Références markdown à update : %d", total_md_updates)
     logger.info("Fichiers introuvables (skip) : %d", total_missing)
     logger.info("Autres skip (ext/path)        : %d", total_other)
+
+    # Détail par session
     for json_path, _data, stats in plans:
         unique_moves = len({mv.old_rel for mv in stats.moves})
         if unique_moves == 0 and not stats.skipped_missing:
@@ -247,10 +346,13 @@ def main(argv: Optional[list[str]] = None) -> int:
                 len(stats.skipped_missing),
                 ", ".join(stats.skipped_missing[:3]) + ("…" if len(stats.skipped_missing) > 3 else ""),
             )
+
     if not args.apply:
         logger.info("")
         logger.info("Mode dry-run. Pour appliquer : --apply")
         return 0
+
+    # Apply : pour chaque session avec moves, exécute + atomic write
     logger.info("")
     logger.info("=== APPLY ===")
     applied_sessions = 0
@@ -268,8 +370,11 @@ def main(argv: Optional[list[str]] = None) -> int:
             _atomic_write_json(json_path, data)
             applied_sessions += 1
             applied_moves += len({mv.old_rel for mv in stats.moves})
+
     logger.info("Migration terminée : %d sessions modifiées, %d photos déplacées",
                 applied_sessions, applied_moves)
     return 0
+
+
 if __name__ == "__main__":
     raise SystemExit(main())
